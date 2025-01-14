@@ -24,4 +24,9 @@ instance/
 venv/
 ENV/
 .idea/
-.vscode/ 
+.vscode/
+
+# Docker
+.docker/
+docker-compose.override.yml
+*.env 

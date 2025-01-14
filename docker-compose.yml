@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  m3u-helper:
+    image: palfans/m3u-helper:latest
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=production
+      # Gunicorn配置
+      - WORKERS=4  # 根据CPU核心数调整
+      - TIMEOUT=30
+      - KEEP_ALIVE=5
+      - MAX_REQUESTS=1000
+      - MAX_REQUESTS_JITTER=50
+    volumes:
+      - ./instance:/app/instance
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3" 
