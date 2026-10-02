@@ -111,6 +111,13 @@ class AppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("编码", response.get_json()["error"])
 
+        response = self.client.post(
+            "/parse",
+            data={"file": (io.BytesIO(b""), "")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 400)
+
 
 if __name__ == "__main__":
     unittest.main()

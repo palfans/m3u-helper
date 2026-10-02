@@ -103,7 +103,7 @@ def parse():
     elif 'file' in request.files:
         file = request.files['file']
         if file.filename == '':
-            return jsonify({'error': 'No file selected'})
+            return jsonify({'error': 'No file selected'}), 400
         try:
             content = file.read().decode('utf-8-sig')
         except UnicodeDecodeError:
@@ -162,7 +162,7 @@ def check_all():
             'results': results
         })
     except Exception as e:
-        return jsonify({'error': str(e)})
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/download', methods=['POST'])
 def download():
@@ -189,7 +189,7 @@ def download():
             mimetype='application/x-mpegurl'
         )
     except Exception as e:
-        return jsonify({'error': str(e)})
+        return jsonify({'error': str(e)}), 500
     finally:
         # 清理临时文件
         if 'temp_path' in locals():
