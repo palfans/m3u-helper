@@ -1,12 +1,11 @@
 import os
-from flask import Flask, render_template, request, jsonify, send_file
-from werkzeug.utils import secure_filename
-import subprocess
-import json
+from flask import Flask, Response, jsonify, render_template, request, send_file
 import requests
-from urllib.parse import urlparse
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
+
+from probe import parse_m3u as parse_playlist
+from probe import probe_url, render_html_report, validate_url
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.urandom(24)
@@ -17,49 +16,20 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max-limit
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 def is_valid_url(url):
-    """验证URL是否有效"""
     try:
-        result = urlparse(url)
-        return all([result.scheme, result.netloc])
-    except:
+        validate_url(url)
+    except ValueError:
         return False
+    return True
 
 def download_m3u_content(url):
-    """从URL下载M3U文件内容"""
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        return response.text
-    except requests.RequestException as e:
-        raise Exception(f"下载M3U文件失败: {str(e)}")
+    response = requests.get(url, timeout=10)
+    response.raise_for_status()
+    return response.content.decode("utf-8-sig")
 
-def parse_m3u(content):
-    """解析M3U文件内容"""
-    lines = content.split('\n')
-    entries = []
-    current_entry = None
-    
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-            
-        if line.startswith('#EXTINF:'):
-            # 解析EXTINF行
-            info = line[8:].split(',', 1)
-            duration = info[0]
-            title = info[1] if len(info) > 1 else ''
-            current_entry = {
-                'duration': duration,
-                'title': title,
-                'url': ''
-            }
-        elif not line.startswith('#') and current_entry is not None:
-            current_entry['url'] = line
-            entries.append(current_entry)
-            current_entry = None
-            
-    return entries
+
+def parse_m3u(content, base_url=None):
+    return parse_playlist(content, base_url)
 
 def generate_m3u(entries):
     """生成M3U文件内容"""
@@ -70,51 +40,29 @@ def generate_m3u(entries):
     return '\n'.join(content)
 
 def get_video_info(url):
-    """使用ffmpeg获取视频信息"""
-    try:
-        result = subprocess.run(
-            ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', url],
-            capture_output=True,
-            text=True,
-            timeout=10  # 添加超时限制
-        )
-        if result.returncode == 0:
-            return json.loads(result.stdout)
-        else:
-            return {'error': '无法读取视频信息'}
-    except subprocess.TimeoutExpired:
-        return {'error': '获取视频信息超时'}
-    except Exception as e:
-        return {'error': str(e)}
+    return probe_url(url)
 
 def check_video_status(entry):
-    """检查单个视频的状态"""
-    url = entry['url']
-    info = get_video_info(url)
-    
-    if 'error' in info:
-        status = 'error'
-        details = info['error']
-    else:
-        status = 'ok'
-        # 提取关键信息
-        details = {
-            'format': info.get('format', {}).get('format_name', '未知'),
-            'duration': info.get('format', {}).get('duration', '未知'),
-            'size': info.get('format', {}).get('size', '未知'),
-            'bit_rate': info.get('format', {}).get('bit_rate', '未知')
-        }
-        if 'streams' in info:
-            for stream in info['streams']:
-                if stream.get('codec_type') == 'video':
-                    details.update({
-                        'video_codec': stream.get('codec_name', '未知'),
-                        'resolution': f"{stream.get('width', '?')}x{stream.get('height', '?')}"
-                    })
-                    break
-    
+    url = entry.get('url', '')
+    try:
+        info = get_video_info(url)
+    except ValueError as exc:
+        info = {'available': False, 'method': 'validation', 'error': str(exc)}
+    status = 'ok' if info.get('available') else 'error'
+    format_info = info.get('format') or {}
+    details = {
+        'method': info.get('method', '未知'),
+        'format': format_info.get('format_name', '未知'),
+        'duration': format_info.get('duration', '未知'),
+        'size': format_info.get('size', '未知'),
+        'bit_rate': format_info.get('bit_rate', '未知'),
+        'video': info.get('video', []),
+        'audio': info.get('audio', []),
+    }
+    if not info.get('available'):
+        details['error'] = info.get('error', '无法读取视频信息')
     return {
-        'title': entry['title'],
+        'title': entry.get('title', ''),
         'url': url,
         'status': status,
         'details': details
@@ -133,9 +81,9 @@ def parse():
         
         try:
             content = download_m3u_content(url)
-            entries = parse_m3u(content)
+            entries = parse_m3u(content, url)
             return jsonify({'entries': entries})
-        except Exception as e:
+        except (requests.RequestException, UnicodeError, ValueError) as e:
             return jsonify({'error': str(e)})
             
     elif 'file' in request.files:
@@ -156,18 +104,31 @@ def video_info():
     if not url:
         return jsonify({'error': 'No URL provided'})
         
-    info = get_video_info(url)
-    return jsonify(info)
+    if not is_valid_url(url):
+        return jsonify({'error': '只支持 HTTP 或 HTTPS URL'}), 400
+    return jsonify(get_video_info(url))
+
+
+@app.route('/report', methods=['POST'])
+def report():
+    payload = request.get_json(silent=True) or {}
+    url = payload.get('url')
+    if not is_valid_url(url):
+        return jsonify({'error': '只支持 HTTP 或 HTTPS URL'}), 400
+    result = get_video_info(url)
+    response = Response(render_html_report(result), mimetype='text/html')
+    response.headers['Content-Disposition'] = 'inline; filename="m3u8-report.html"'
+    return response
 
 @app.route('/check-all', methods=['POST'])
 def check_all():
     """批量检查所有视频的状态"""
-    entries = request.json.get('entries', [])
+    payload = request.get_json(silent=True) or {}
+    entries = payload.get('entries', [])
     if not entries:
         return jsonify({'error': '没有需要检查的视频'})
     
     try:
-        # 使用线程池并行处理
         with ThreadPoolExecutor(max_workers=5) as executor:
             results = list(executor.map(check_video_status, entries))
         
@@ -206,8 +167,8 @@ def download():
         if 'temp_path' in locals():
             try:
                 os.unlink(temp_path)
-            except:
+            except OSError:
                 pass
 
 if __name__ == '__main__':
-    app.run(debug=True) 
+    app.run(debug=True)

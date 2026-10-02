@@ -3,9 +3,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const playlist = document.getElementById('playlist');
     const downloadBtn = document.getElementById('downloadBtn');
     const checkAllBtn = document.getElementById('checkAllBtn');
+    const reportBtn = document.getElementById('reportBtn');
     const videoInfoModal = new bootstrap.Modal(document.getElementById('videoInfoModal'));
     
     let currentEntries = [];
+    let currentSourceUrl = '';
     let checkingInProgress = false;
     
     // 初始化拖拽排序
@@ -18,6 +20,68 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    function setButtonVisibility() {
+        const hasEntries = currentEntries.length > 0;
+        downloadBtn.style.display = hasEntries ? 'block' : 'none';
+        checkAllBtn.style.display = hasEntries ? 'block' : 'none';
+        reportBtn.style.display = currentSourceUrl ? 'block' : 'none';
+    }
+
+    function addTextLine(parent, label, value) {
+        const line = document.createElement('div');
+        line.textContent = `${label}: ${value || '未知'}`;
+        parent.appendChild(line);
+    }
+
+    function setCheckingState(item) {
+        let status = item.querySelector('.check-status');
+        if (!status) {
+            status = document.createElement('span');
+            item.querySelector('.info-btn').insertAdjacentElement('afterend', status);
+        }
+        status.className = 'check-status checking';
+        status.textContent = '检查中';
+
+        let info = item.querySelector('.check-info');
+        if (!info) {
+            info = document.createElement('div');
+            item.appendChild(info);
+        }
+        info.className = 'check-info checking';
+        info.textContent = '正在检查视频信息...';
+    }
+
+    function showResult(item, result) {
+        const success = result.status === 'ok';
+        const details = result.details || {};
+        const status = item.querySelector('.check-status');
+        const info = item.querySelector('.check-info');
+        status.className = `check-status ${success ? 'success' : 'error'}`;
+        status.textContent = success ? '正常' : '错误';
+        info.className = `check-info ${success ? 'success' : 'error'}`;
+        info.textContent = '';
+        if (!success) {
+            info.textContent = details.error || result.error || '检查失败';
+            return;
+        }
+        addTextLine(info, '探测方式', details.method);
+        addTextLine(info, '格式', details.format);
+        (details.video || []).forEach((stream, index) => {
+            addTextLine(info, `视频${index + 1}`, `${stream.codec || '未知'}，${stream.resolution || '未知分辨率'}`);
+        });
+        (details.audio || []).forEach((stream, index) => {
+            addTextLine(info, `音频${index + 1}`, `${stream.codec || '未知'}，${stream.sample_rate || '未知采样率'}，${stream.channels || '未知声道'}`);
+        });
+    }
+
+    async function readJsonResponse(response) {
+        const data = await response.json();
+        if (!response.ok || data.error) {
+            throw new Error(data.error || '请求失败');
+        }
+        return data;
+    }
+
     // 处理表单提交
     form.addEventListener('submit', async function(e) {
         e.preventDefault();
@@ -25,13 +89,14 @@ document.addEventListener('DOMContentLoaded', function() {
         const formData = new FormData();
         const urlInput = document.getElementById('m3uUrl');
         const fileInput = document.getElementById('m3uFile');
-        
-        if (urlInput.value) {
-            formData.append('url', urlInput.value);
+        currentSourceUrl = urlInput.value.trim();
+        if (currentSourceUrl) {
+            formData.append('url', currentSourceUrl);
         } else if (fileInput.files.length > 0) {
+            currentSourceUrl = '';
             formData.append('file', fileInput.files[0]);
         } else {
-            alert('请输入URL或选择文件');
+            alert('请输入 URL 或选择文件');
             return;
         }
         
@@ -41,19 +106,43 @@ document.addEventListener('DOMContentLoaded', function() {
                 body: formData
             });
             
-            const data = await response.json();
-            if (data.error) {
-                alert(data.error);
-                return;
-            }
-            
+            const data = await readJsonResponse(response);
             currentEntries = data.entries;
             renderPlaylist(currentEntries);
-            downloadBtn.style.display = 'block';
-            checkAllBtn.style.display = 'block';
+            setButtonVisibility();
         } catch (error) {
-            console.error('Error:', error);
-            alert('解析失败');
+            alert(error.message || '解析失败');
+        }
+    });
+
+    reportBtn.addEventListener('click', async function() {
+        if (!currentSourceUrl) {
+            alert('HTML 报告需要使用 M3U8 URL');
+            return;
+        }
+        reportBtn.disabled = true;
+        try {
+            const response = await fetch('/report', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: currentSourceUrl })
+            });
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || '报告生成失败');
+            }
+            const blobUrl = window.URL.createObjectURL(await response.blob());
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = 'm3u8-report.html';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(blobUrl);
+        } catch (error) {
+            alert(error.message || '报告生成失败');
+        } finally {
+            reportBtn.disabled = false;
         }
     });
 
@@ -96,85 +185,30 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 处理批量检查按钮点击
     checkAllBtn.addEventListener('click', async function() {
-        if (!currentEntries.length) {
-            alert('没有需要检查的视频');
+        if (!currentEntries.length || checkingInProgress) {
             return;
         }
-
-        if (checkingInProgress) {
-            alert('检查正在进行中，请等待完成');
-            return;
-        }
-
         checkingInProgress = true;
         checkAllBtn.disabled = true;
-        checkAllBtn.innerHTML = '<div class="loading-spinner"></div> 检查中...';
-        
+        checkAllBtn.textContent = '检查中...';
+        const items = Array.from(playlist.children);
+        items.forEach(setCheckingState);
         try {
-            const items = playlist.children;
-            for (let i = 0; i < items.length; i++) {
-                const item = items[i];
-                const url = item.querySelector('.info-btn').dataset.url;
-                const title = item.querySelector('strong').textContent;
-                
-                // 添加检查状态标签
-                const statusSpan = document.createElement('span');
-                statusSpan.className = 'check-status checking';
-                statusSpan.textContent = '检查中';
-                item.querySelector('.info-btn').insertAdjacentElement('afterend', statusSpan);
-                
-                // 添加检查信息区域
-                let checkInfo = item.querySelector('.check-info');
-                if (!checkInfo) {
-                    checkInfo = document.createElement('div');
-                    checkInfo.className = 'check-info checking';
-                    checkInfo.innerHTML = '<div class="loading-spinner"></div> 正在检查视频信息...';
-                    item.appendChild(checkInfo);
-                }
-                
-                try {
-                    const response = await fetch('/video-info', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ url })
-                    });
-                    
-                    const data = await response.json();
-                    const isSuccess = !('error' in data);
-                    
-                    // 更新状态标签
-                    statusSpan.className = `check-status ${isSuccess ? 'success' : 'error'}`;
-                    statusSpan.textContent = isSuccess ? '正常' : '错误';
-                    
-                    // 更新检查信息
-                    checkInfo.className = `check-info ${isSuccess ? 'success' : 'error'}`;
-                    if (isSuccess) {
-                        checkInfo.innerHTML = `
-                            <div><strong>格式:</strong> ${data.format?.format_name || '未知'}</div>
-                            <div><strong>时长:</strong> ${data.format?.duration || '未知'}秒</div>
-                            <div><strong>大小:</strong> ${data.format?.size || '未知'}字节</div>
-                            <div><strong>比特率:</strong> ${data.format?.bit_rate || '未知'}bps</div>
-                            ${data.streams?.find(s => s.codec_type === 'video') ? `
-                                <div><strong>视频编码:</strong> ${data.streams.find(s => s.codec_type === 'video').codec_name || '未知'}</div>
-                                <div><strong>分辨率:</strong> ${data.streams.find(s => s.codec_type === 'video').width || '?'}x${data.streams.find(s => s.codec_type === 'video').height || '?'}</div>
-                            ` : ''}
-                        `;
-                    } else {
-                        checkInfo.innerHTML = `<div class="text-danger">${data.error}</div>`;
-                    }
-                } catch (error) {
-                    console.error('Error:', error);
-                    statusSpan.className = 'check-status error';
-                    statusSpan.textContent = '错误';
-                    checkInfo.className = 'check-info error';
-                    checkInfo.innerHTML = '<div class="text-danger">检查失败</div>';
-                }
-            }
+            const data = await readJsonResponse(await fetch('/check-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entries: currentEntries })
+            }));
+            data.results.forEach((result, index) => showResult(items[index], result));
         } catch (error) {
-            console.error('Error:', error);
-            alert('检查过程中发生错误');
+            items.forEach(item => {
+                const status = item.querySelector('.check-status');
+                const info = item.querySelector('.check-info');
+                status.className = 'check-status error';
+                status.textContent = '错误';
+                info.className = 'check-info error';
+                info.textContent = error.message || '检查失败';
+            });
         } finally {
             checkingInProgress = false;
             checkAllBtn.disabled = false;
@@ -184,84 +218,78 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 更新条目顺序
     function updateEntries() {
-        const items = playlist.children;
-        const newEntries = [];
-        
-        for (let item of items) {
-            const title = item.querySelector('strong').textContent;
-            const duration = item.querySelector('.video-info').textContent.match(/时长: (.*?)秒/)[1];
-            const url = item.querySelector('.info-btn').dataset.url;
-            
-            newEntries.push({
-                title: title === '未命名' ? '' : title,
-                duration: duration,
-                url: url
-            });
-        }
-        
-        currentEntries = newEntries;
+        currentEntries = Array.from(playlist.children).map(item => ({
+            title: item.querySelector('strong').textContent,
+            duration: item.dataset.duration || '-1',
+            url: item.dataset.url
+        }));
+        setButtonVisibility();
     }
 
     // 渲染播放列表
     function renderPlaylist(entries) {
-        playlist.innerHTML = '';
-        entries.forEach((entry, index) => {
+        playlist.textContent = '';
+        entries.forEach(entry => {
             const item = document.createElement('div');
             item.className = 'playlist-item';
-            item.innerHTML = `
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <strong>${entry.title || '未命名'}</strong>
-                        <div class="video-info">
-                            时长: ${entry.duration}秒
-                            <br>
-                            URL: ${entry.url}
-                        </div>
-                    </div>
-                    <div>
-                        <button class="btn btn-sm btn-info me-2 info-btn" data-url="${entry.url}">
-                            信息
-                        </button>
-                        <button class="btn btn-sm btn-danger delete-btn">
-                            删除
-                        </button>
-                    </div>
-                </div>
-            `;
-            
+            item.dataset.duration = entry.duration || '-1';
+            item.dataset.url = entry.url;
+
+            const header = document.createElement('div');
+            header.className = 'd-flex justify-content-between align-items-center';
+            const text = document.createElement('div');
+            const title = document.createElement('strong');
+            title.textContent = entry.title || '未命名';
+            const metadata = document.createElement('div');
+            metadata.className = 'video-info';
+            metadata.textContent = `时长: ${entry.duration || '-1'}秒`;
+            const urlText = document.createElement('div');
+            urlText.textContent = `URL: ${entry.url}`;
+            metadata.appendChild(document.createElement('br'));
+            metadata.appendChild(urlText);
+            text.appendChild(title);
+            text.appendChild(metadata);
+
+            const actions = document.createElement('div');
+            const infoButton = document.createElement('button');
+            infoButton.className = 'btn btn-sm btn-info me-2 info-btn';
+            infoButton.textContent = '信息';
+            infoButton.dataset.url = entry.url;
+            const deleteButton = document.createElement('button');
+            deleteButton.className = 'btn btn-sm btn-danger delete-btn';
+            deleteButton.textContent = '删除';
+            actions.appendChild(infoButton);
+            actions.appendChild(deleteButton);
+            header.appendChild(text);
+            header.appendChild(actions);
+            item.appendChild(header);
+
             // 绑定删除按钮事件
-            item.querySelector('.delete-btn').addEventListener('click', function() {
+            deleteButton.addEventListener('click', function() {
                 item.remove();
                 updateEntries();
-                if (playlist.children.length === 0) {
-                    downloadBtn.style.display = 'none';
-                    checkAllBtn.style.display = 'none';
-                }
             });
-            
+
             // 绑定信息按钮事件
-            item.querySelector('.info-btn').addEventListener('click', async function() {
-                const url = this.dataset.url;
+            infoButton.addEventListener('click', async function() {
                 try {
                     const response = await fetch('/video-info', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({ url })
+                        body: JSON.stringify({ url: entry.url })
                     });
-                    
-                    const data = await response.json();
+                    const data = await readJsonResponse(response);
                     document.getElementById('videoInfoContent').textContent = 
                         JSON.stringify(data, null, 2);
                     videoInfoModal.show();
                 } catch (error) {
-                    console.error('Error:', error);
-                    alert('获取视频信息失败');
+                    alert(error.message || '获取视频信息失败');
                 }
             });
-            
+
             playlist.appendChild(item);
         });
     }
-}); 
+});

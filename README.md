@@ -8,12 +8,16 @@
 - 可视化展示播放列表内容
 - 支持拖拽排序播放列表项目
 - 支持编辑和删除播放列表条目
-- 集成ffmpeg查看视频属性
+- 集成 `ffprobe` 查看视频和音频属性
+- 支持 master m3u8、子 m3u8 和媒体片段可用性检查
+- 缺少 `ffprobe` 时回退到 `ffmpeg`，再回退到 `m3u8` 清单与片段检查
+- 下载包含可用性、视频分辨率和音频信息的 HTML 报告
 
 ## 安装要求
 
 - Python 3.10+
-- FFmpeg
+- FFmpeg（推荐，包含 `ffprobe`）
+- 没有 FFmpeg 时，Python 回退检查仍可验证 m3u8 和媒体片段
 
 ## 使用方法
 
@@ -76,8 +80,32 @@ docker-compose up -d
 1. 访问 http://localhost:5000
 2. 输入M3U文件链接或上传本地M3U文件
 3. 使用界面功能进行编辑和管理
+4. 使用“检查所有视频”查看批量探测结果，使用“下载 HTML 报告”保存报告
+
+## 探测方式
+
+探测器按照以下顺序选择方式：
+
+1. 系统 `ffprobe`：读取结构化 JSON，提取视频分辨率、编码、音频编码、采样率和声道。
+2. 系统 `ffmpeg`：读取媒体流信息并解析视频和音频基础字段。
+3. Python 回退：使用已有的 `m3u8` 与 `requests` 递归读取 master/子清单，并请求最新媒体片段。
+
+Python 回退可以判断清单和片段是否可用；当清单缺少 `RESOLUTION` 或 `CODECS` 标签时，报告会显示未知字段。
+
+## HTTP 接口
+
+- `POST /parse`：读取 M3U/M3U8 URL 或上传文件，返回播放列表条目。
+- `POST /video-info`：提交 `{ "url": "https://..." }`，返回 JSON 探测结果。
+- `POST /check-all`：提交 `{ "entries": [{ "title": "...", "url": "https://..." }] }`，并行返回批量结果。
+- `POST /report`：提交 `{ "url": "https://..." }`，返回可下载的 HTML 报告。
 
 ## 开发说明
+
+运行测试：
+
+```bash
+python -m unittest discover -s tests -v
+```
 
 ### 构建Docker镜像
 
@@ -95,4 +123,4 @@ chmod +x docker-build.sh
 
 ## 许可证
 
-MIT 
+MIT
