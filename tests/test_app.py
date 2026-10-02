@@ -49,6 +49,7 @@ class AppTests(unittest.TestCase):
     def setUp(self):
         app.config["ALLOW_PRIVATE_URLS"] = True
         app.config["PROBE_TIMEOUT"] = 1
+        app.config["CHECK_WORKERS"] = 1
         self.client = app.test_client()
 
     def test_parse_master_m3u8_returns_variant_entry(self):
@@ -77,6 +78,24 @@ class AppTests(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(data["total"], 1)
         self.assertEqual(data["results"][0]["status"], "error")
+
+    def test_check_all_worker_count_is_configurable(self):
+        app.config["CHECK_WORKERS"] = 2
+        try:
+            response = self.client.post(
+                "/check-all",
+                json={
+                    "entries": [
+                        {"title": "one", "url": "ftp://example.test/one.m3u8"},
+                        {"title": "two", "url": "ftp://example.test/two.m3u8"},
+                    ]
+                },
+            )
+        finally:
+            app.config["CHECK_WORKERS"] = 1
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["total"], 2)
 
     def test_video_info_rejects_missing_json_body(self):
         response = self.client.post("/video-info", data="bad", content_type="text/plain")

@@ -12,6 +12,9 @@ app.config['UPLOAD_FOLDER'] = 'instance/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max-limit
 app.config['ALLOW_PRIVATE_URLS'] = os.environ.get('M3U_HELPER_ALLOW_PRIVATE_URLS') == '1'
 app.config['PROBE_TIMEOUT'] = int(os.environ.get('M3U_HELPER_PROBE_TIMEOUT', '10'))
+app.config['CHECK_WORKERS'] = int(os.environ.get('M3U_HELPER_CHECK_WORKERS', '1'))
+if app.config['CHECK_WORKERS'] < 1:
+    raise ValueError('M3U_HELPER_CHECK_WORKERS 必须大于或等于 1')
 
 # 确保上传目录存在
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -154,9 +157,11 @@ def check_all():
         return jsonify({'error': '没有需要检查的视频'}), 400
     
     try:
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            results = list(executor.map(check_video_status, entries))
-        
+        if app.config['CHECK_WORKERS'] == 1:
+            results = [check_video_status(entry) for entry in entries]
+        else:
+            with ThreadPoolExecutor(max_workers=app.config['CHECK_WORKERS']) as executor:
+                results = list(executor.map(check_video_status, entries))
         return jsonify({
             'total': len(results),
             'results': results
