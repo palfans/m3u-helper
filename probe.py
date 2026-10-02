@@ -231,8 +231,8 @@ def _read_response(response, max_bytes):
 def _fetch(url, timeout, max_bytes, allow_private=False):
     current_url = url
     for _ in range(MAX_REDIRECTS + 1):
-        validate_url(current_url, allow_private=allow_private)
         try:
+            validate_url(current_url, allow_private=allow_private)
             with requests.get(
                 current_url,
                 headers={"User-Agent": USER_AGENT},
@@ -249,6 +249,8 @@ def _fetch(url, timeout, max_bytes, allow_private=False):
                 response.raise_for_status()
                 validate_url(response.url, allow_private=allow_private)
                 return _read_response(response, max_bytes), response.url
+        except ValueError as exc:
+            raise ProbeError(str(exc)) from exc
         except requests.RequestException as exc:
             raise ProbeError(f"请求失败: {exc}") from exc
     raise ProbeError(f"重定向次数超过 {MAX_REDIRECTS} 次")
