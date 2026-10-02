@@ -555,6 +555,46 @@ document.addEventListener('DOMContentLoaded', () => {
         dom.videoInfoContent.appendChild(rawDetails);
     }
 
+    function appendThumbnail(data) {
+        if (data?.thumbnail) {
+            const preview = document.createElement('figure');
+            preview.className = 'thumbnail-preview';
+            const image = document.createElement('img');
+            image.src = data.thumbnail;
+            image.alt = '视频首帧截图';
+            image.loading = 'lazy';
+            preview.appendChild(image);
+            dom.videoInfoContent.appendChild(preview);
+            return;
+        }
+        if (data?.thumbnail_error) {
+            const message = document.createElement('p');
+            message.className = 'result-hint thumbnail-error';
+            message.textContent = '首帧截图不可用';
+            message.title = data.thumbnail_error;
+            dom.videoInfoContent.appendChild(message);
+        }
+    }
+
+    async function loadThumbnail(url, controller, token) {
+        try {
+            const response = await fetchResponse('/thumbnail', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url }),
+                signal: controller.signal,
+            }, '截取首帧');
+            const data = await readJsonResponse(response);
+            if (token === state.requestToken && dom.videoInfoModal.open) {
+                appendThumbnail(data);
+            }
+        } catch (error) {
+            if (error.name !== 'AbortError' && token === state.requestToken && dom.videoInfoModal.open) {
+                appendThumbnail({ thumbnail_error: error.message || '首帧截图请求失败' });
+            }
+        }
+    }
+
     function appendModalStreams(title, streams, type) {
         if (!streams?.length) {
             return;
@@ -600,24 +640,30 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!dom.videoInfoModal.open) {
             dom.videoInfoModal.showModal();
         }
-        if (existing) {
-            renderModalDetails(existing, entry.url);
-            return;
-        }
         state.infoController?.abort();
         const controller = new AbortController();
         state.infoController = controller;
         const token = state.requestToken;
         try {
-            const response = await fetchResponse('/video-info', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: entry.url }),
-                signal: controller.signal,
-            }, '读取视频信息');
-            const data = await readJsonResponse(response);
-            if (token === state.requestToken) {
-                renderModalDetails(data, entry.url);
+            if (existing) {
+                renderModalDetails(existing, entry.url);
+                if (existing.status === 'ok') {
+                    await loadThumbnail(entry.url, controller, token);
+                }
+            } else {
+                const response = await fetchResponse('/video-info', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: entry.url }),
+                    signal: controller.signal,
+                }, '读取视频信息');
+                const data = await readJsonResponse(response);
+                if (token === state.requestToken) {
+                    renderModalDetails(data, entry.url);
+                    if (data.available) {
+                        await loadThumbnail(entry.url, controller, token);
+                    }
+                }
             }
         } catch (error) {
             if (error.name !== 'AbortError' && token === state.requestToken) {

@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
 from probe import parse_m3u as parse_playlist
-from probe import ProbeError, fetch_m3u_content, probe_url, render_html_report, validate_url
+from probe import ProbeError, capture_thumbnail, fetch_m3u_content, probe_url, render_html_report, validate_url
 
 app = Flask(__name__)
 app.logger.setLevel(os.environ.get('M3U_HELPER_LOG_LEVEL', 'INFO').upper())
@@ -58,6 +58,14 @@ def get_video_info(url):
         timeout=app.config['PROBE_TIMEOUT'],
         allow_private=app.config['ALLOW_PRIVATE_URLS'],
     )
+
+
+def get_thumbnail(url):
+    try:
+        return {'thumbnail': capture_thumbnail(url, timeout=app.config['PROBE_TIMEOUT'])}
+    except (ProbeError, OSError) as exc:
+        app.logger.info('thumbnail capture failed: host=%s error=%s', log_url(url), exc)
+        return {'thumbnail': None, 'thumbnail_error': str(exc)}
 
 def check_video_status(entry):
     if not isinstance(entry, dict):
@@ -151,6 +159,19 @@ def video_info():
     return jsonify(get_video_info(url))
 
 
+@app.route('/thumbnail', methods=['POST'])
+def thumbnail():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({'error': '请求体必须是 JSON 对象'}), 400
+    url = payload.get('url')
+    if not url:
+        return jsonify({'error': 'No URL provided'}), 400
+    if not is_valid_url(url):
+        return jsonify({'error': '只支持 HTTP 或 HTTPS URL'}), 400
+    return jsonify(get_thumbnail(url))
+
+
 @app.route('/report', methods=['POST'])
 def report():
     payload = request.get_json(silent=True)
@@ -160,6 +181,8 @@ def report():
     if not is_valid_url(url):
         return jsonify({'error': '只支持 HTTP 或 HTTPS URL'}), 400
     result = get_video_info(url)
+    if result.get('available'):
+        result.update(get_thumbnail(url))
     response = Response(render_html_report(result), mimetype='text/html')
     response.headers['Content-Disposition'] = 'inline; filename="m3u8-report.html"'
     return response

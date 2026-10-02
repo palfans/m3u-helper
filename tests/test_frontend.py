@@ -39,7 +39,16 @@ class FrontendTests(unittest.TestCase):
 
         self.assertIn("fetchResponse('/check-all'", script)
         self.assertIn("fetchResponse('/report'", script)
+        self.assertIn("fetchResponse('/thumbnail'", script)
         self.assertIn("body: JSON.stringify({ entries: batch, workers })", script)
+
+    def test_script_renders_on_demand_thumbnail(self):
+        script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")
+        styles = (ROOT / "static" / "css" / "style.css").read_text(encoding="utf-8")
+
+        self.assertIn("thumbnail-preview", script)
+        self.assertIn("thumbnail_error", script)
+        self.assertIn(".thumbnail-preview", styles)
 
     def test_script_batches_long_check_requests(self):
         script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")

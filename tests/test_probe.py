@@ -4,6 +4,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from probe import (
     normalize_ffprobe,
+    capture_thumbnail,
     parse_ffmpeg_output,
     parse_m3u,
     probe_m3u8,
@@ -156,6 +157,10 @@ class ProbeTests(unittest.TestCase):
         with self.assertRaises(ProbeError):
             validate_ffmpeg_result("Stream #0:0: Video: h264, 1920x1080", 1)
 
+    def test_capture_thumbnail_reports_ffmpeg_failure(self):
+        with self.assertRaises(ProbeError):
+            capture_thumbnail("https://example.test/live.m3u8", timeout=1, executable="/bin/false")
+
     def test_private_url_requires_explicit_opt_in(self):
         with self.assertRaises(ValueError):
             validate_url("http://127.0.0.1:8080/live.m3u8")
@@ -173,6 +178,7 @@ class ProbeTests(unittest.TestCase):
             "video": [{"codec": "h264", "resolution": "1280x720"}],
             "audio": [{"codec": "aac", "sample_rate": "48000", "channels": 2}],
             "playlist": {},
+            "thumbnail": "data:image/jpeg;base64,ZmFrZQ==",
         }
 
         html = render_html_report(result)
@@ -180,6 +186,8 @@ class ProbeTests(unittest.TestCase):
         self.assertIn("可用", html)
         self.assertIn("1280x720", html)
         self.assertIn("48000", html)
+        self.assertIn('class="thumbnail-preview"', html)
+        self.assertIn("data:image/jpeg;base64,ZmFrZQ==", html)
         self.assertIn("&lt;unsafe&gt;", html)
         self.assertNotIn("?q=<unsafe>", html)
 

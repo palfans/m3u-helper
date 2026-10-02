@@ -1,3 +1,4 @@
+import base64
 import html
 import ipaddress
 import json
@@ -214,6 +215,49 @@ def probe_with_ffmpeg(url, timeout=DEFAULT_TIMEOUT, executable=None):
         "audio": streams["audio"],
         "playlist": {},
     }
+
+
+def capture_thumbnail(url, timeout=DEFAULT_TIMEOUT, executable=None):
+    executable = executable or shutil.which("ffmpeg")
+    if not executable:
+        raise FileNotFoundError("系统中没有找到 ffmpeg")
+    command = [
+        executable,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        url,
+        "-frames:v",
+        "1",
+        "-vf",
+        "scale=640:-2",
+        "-an",
+        "-f",
+        "image2pipe",
+        "-vcodec",
+        "mjpeg",
+        "pipe:1",
+    ]
+    environment = os.environ.copy()
+    environment["LC_ALL"] = "C"
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+            env=environment,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ProbeError("视频首帧截取超时") from exc
+    if completed.returncode != 0:
+        detail = (completed.stderr or "ffmpeg 未生成视频首帧".encode()).decode(errors="replace").strip()
+        raise ProbeError(detail[-1000:])
+    if not completed.stdout:
+        raise ProbeError("ffmpeg 未生成视频首帧")
+    encoded = base64.b64encode(completed.stdout).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}"
 
 
 def _read_response(response, max_bytes):
@@ -486,6 +530,13 @@ def render_html_report(result):
         )
         if key in playlist
     )
+    thumbnail = result.get("thumbnail")
+    thumbnail_html = (
+        '<h2>首帧截图</h2>'
+        f'<figure class="thumbnail-preview"><img src="{html.escape(thumbnail, quote=True)}" alt="视频首帧截图"></figure>'
+        if thumbnail
+        else ""
+    )
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head><meta charset="utf-8"><title>M3U8 探测报告</title>
@@ -494,6 +545,7 @@ body{{font-family:system-ui,sans-serif;max-width:1000px;margin:2rem auto;padding
 h1{{margin-bottom:.25rem}} table{{border-collapse:collapse;width:100%;margin:1rem 0 2rem}}
 th,td{{border:1px solid #d1d5db;padding:.5rem;text-align:left;word-break:break-word}}
 th{{background:#f3f4f6}} .status{{font-size:1.25rem;font-weight:700}}
+.thumbnail-preview{{margin:1rem 0 2rem}} .thumbnail-preview img{{display:block;max-width:100%;max-height:480px;margin:auto;border-radius:.5rem}}
 .ok{{color:#15803d}} .bad,.error{{color:#b91c1c}}
 </style></head>
 <body><h1>M3U8 探测报告</h1>
@@ -504,6 +556,7 @@ th{{background:#f3f4f6}} .status{{font-size:1.25rem;font-weight:700}}
 <tr><th>探测方式</th><td>{_value(result.get('method'))}</td></tr>
 </tbody></table>
 {error}
+{thumbnail_html}
 <h2>视频信息</h2>{_table(("编码", "分辨率", "帧率", "比特率"), video_rows)}
 <h2>音频信息</h2>{_table(("编码", "采样率", "声道", "声道布局", "比特率", "语言"), audio_rows)}
 {f'<h2>播放列表检查</h2><table><tbody>{playlist_rows}</tbody></table>' if playlist_rows else ''}

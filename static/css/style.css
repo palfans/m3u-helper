@@ -1005,6 +1005,25 @@ h2 {
     padding-top: 20px;
 }
 
+.thumbnail-preview {
+    margin: 20px 0 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.05);
+}
+
+.thumbnail-preview img {
+    display: block;
+    width: 100%;
+    max-height: 360px;
+    object-fit: contain;
+}
+
+.thumbnail-error {
+    margin-top: 15px;
+}
+
 .dialog-url {
     margin: 0 0 16px;
     color: var(--subtle);
