@@ -609,12 +609,12 @@ document.addEventListener('DOMContentLoaded', () => {
         state.infoController = controller;
         const token = state.requestToken;
         try {
-            const response = await fetch('/video-info', {
+            const response = await fetchResponse('/video-info', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url: entry.url }),
                 signal: controller.signal,
-            });
+            }, '读取视频信息');
             const data = await readJsonResponse(response);
             if (token === state.requestToken) {
                 renderModalDetails(data, entry.url);
@@ -636,6 +636,17 @@ document.addEventListener('DOMContentLoaded', () => {
             throw new Error(data.error || `请求失败（${response.status}）`);
         }
         return data;
+    }
+
+    async function fetchResponse(url, options, action) {
+        try {
+            return await fetch(url, options);
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                throw error;
+            }
+            throw new Error(`${action}连接失败：请确认 Docker 服务正在运行，并检查网络代理`);
+        }
     }
 
     function createDownload(blob, filename) {
@@ -663,12 +674,12 @@ document.addEventListener('DOMContentLoaded', () => {
         state.reportController = controller;
         const token = state.requestToken;
         try {
-            const response = await fetch('/report', {
+            const response = await fetchResponse('/report', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url: state.sourceUrl }),
                 signal: controller.signal,
-            });
+            }, '生成 HTML 报告');
             if (!response.ok) {
                 await readJsonResponse(response);
             }
@@ -696,12 +707,12 @@ document.addEventListener('DOMContentLoaded', () => {
         state.downloadController = controller;
         const token = state.requestToken;
         try {
-            const response = await fetch('/download', {
+            const response = await fetchResponse('/download', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ entries: state.entries }),
                 signal: controller.signal,
-            });
+            }, '导出播放列表');
             if (!response.ok) {
                 await readJsonResponse(response);
             }
@@ -734,18 +745,25 @@ document.addEventListener('DOMContentLoaded', () => {
         state.checkController = controller;
         const token = state.requestToken;
         try {
-            const response = await fetch('/check-all', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entries: state.entries, workers: Number(dom.checkWorkers.value) }),
-                signal: controller.signal,
-            });
-            const data = await readJsonResponse(response);
-            if (token !== state.requestToken) {
-                return;
+            const batchSize = Math.max(1, workers * 2);
+            for (let start = 0; start < state.entries.length; start += batchSize) {
+                const batch = state.entries.slice(start, start + batchSize);
+                const response = await fetchResponse('/check-all', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ entries: batch, workers }),
+                    signal: controller.signal,
+                }, '批量检查');
+                const data = await readJsonResponse(response);
+                if (token !== state.requestToken) {
+                    return;
+                }
+                if (!Array.isArray(data.results) || data.results.length !== batch.length) {
+                    throw new Error('批量检查返回的结果数量不一致');
+                }
+                state.results.splice(start, batch.length, ...data.results);
+                updateCards();
             }
-            state.results = data.results || [];
-            updateCards();
             const available = state.results.filter((result) => result?.status === 'ok').length;
             showToast(`检查完成：${available} / ${state.entries.length} 条可用`, available ? 'success' : 'error');
         } catch (error) {
@@ -794,7 +812,7 @@ document.addEventListener('DOMContentLoaded', () => {
             formData.append('file', file);
         }
         try {
-            const response = await fetch('/parse', { method: 'POST', body: formData, signal: controller.signal });
+            const response = await fetchResponse('/parse', { method: 'POST', body: formData, signal: controller.signal }, '读取播放列表');
             const data = await readJsonResponse(response);
             if (token !== state.requestToken) {
                 return;

@@ -11,7 +11,7 @@ workers = int(os.getenv("WORKERS", multiprocessing.cpu_count() * 2 + 1))
 worker_class = "sync"
 
 # 超时时间
-timeout = int(os.getenv("TIMEOUT", 30))
+timeout = int(os.getenv("TIMEOUT", 120))
 
 # keepalive超时
 keepalive = int(os.getenv("KEEP_ALIVE", 5))
@@ -32,4 +32,4 @@ proc_name = "m3u-helper"
 graceful_timeout = 30
 
 # 预加载应用
-preload_app = True 
+preload_app = True

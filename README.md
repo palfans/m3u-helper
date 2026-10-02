@@ -98,7 +98,7 @@ Python 回退可以判断清单和片段是否可用；当清单缺少 `RESOLUTI
 
 - `POST /parse`：读取 M3U/M3U8 URL 或上传文件，返回播放列表条目。
 - `POST /video-info`：提交 `{ "url": "https://..." }`，返回 JSON 探测结果。
-- `POST /check-all`：提交 `{ "entries": [{ "title": "...", "url": "https://..." }], "workers": 1 }`，`workers` 支持 `1`、`2`、`3`、`5`，页面通过并发选择器提交；省略时使用服务端默认值。
+- `POST /check-all`：提交 `{ "entries": [{ "title": "...", "url": "https://..." }], "workers": 1 }`，`workers` 支持 `1`、`2`、`3`、`5`，页面通过并发选择器提交；页面会按所选并发数分批提交，省略时使用服务端默认值。
 - `POST /report`：提交 `{ "url": "https://..." }`，返回可下载的 HTML 报告。
 
 ## 开发说明

@@ -60,6 +60,15 @@ class AppTests(unittest.TestCase):
         self.assertEqual(data["entries"][0]["resolution"], "1280x720")
         self.assertTrue(data["entries"][0]["url"].endswith("/video/index.m3u8"))
 
+    def test_parse_remote_failure_is_written_to_application_log(self):
+        missing_url = self.url.replace("/master.m3u8", "/missing.m3u8")
+
+        with self.assertLogs("app", level="WARNING") as captured:
+            response = self.client.post("/parse", data={"url": missing_url})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(any("parse remote playlist failed" in line for line in captured.output))
+
     def test_report_endpoint_returns_html(self):
         response = self.client.post("/report", json={"url": self.url})
 

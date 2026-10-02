@@ -2,11 +2,13 @@ import os
 from flask import Flask, Response, jsonify, render_template, request, send_file
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import urlparse
 
 from probe import parse_m3u as parse_playlist
 from probe import ProbeError, fetch_m3u_content, probe_url, render_html_report, validate_url
 
 app = Flask(__name__)
+app.logger.setLevel(os.environ.get('M3U_HELPER_LOG_LEVEL', 'INFO').upper())
 app.config['SECRET_KEY'] = os.urandom(24)
 app.config['UPLOAD_FOLDER'] = 'instance/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max-limit
@@ -37,6 +39,10 @@ def download_m3u_content(url):
 
 def parse_m3u(content, base_url=None):
     return parse_playlist(content, base_url)
+
+
+def log_url(url):
+    return urlparse(url).hostname or "unknown"
 
 def generate_m3u(entries):
     """生成M3U文件内容"""
@@ -111,6 +117,7 @@ def parse():
             entries = parse_m3u(content, final_url)
             return jsonify({'entries': entries})
         except (ProbeError, UnicodeError, ValueError) as e:
+            app.logger.warning('parse remote playlist failed: host=%s error=%s', log_url(url), e)
             return jsonify({'error': str(e)}), 400
             
     elif 'file' in request.files:
@@ -124,6 +131,7 @@ def parse():
         try:
             entries = parse_m3u(content)
         except (UnicodeError, ValueError) as e:
+            app.logger.warning('parse uploaded playlist failed: error=%s', e)
             return jsonify({'error': str(e)}), 400
         return jsonify({'entries': entries})
             
@@ -171,18 +179,21 @@ def check_all():
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
 
+    app.logger.info('check-all started: entries=%d workers=%d', len(entries), workers)
     try:
         if workers == 1:
             results = [check_video_status(entry) for entry in entries]
         else:
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 results = list(executor.map(check_video_status, entries))
+        app.logger.info('check-all completed: entries=%d workers=%d', len(results), workers)
         return jsonify({
             'total': len(results),
             'results': results
         })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception as exc:
+        app.logger.exception('check-all failed: entries=%d workers=%d', len(entries), workers)
+        return jsonify({'error': str(exc)}), 500
 
 @app.route('/download', methods=['POST'])
 def download():
@@ -208,8 +219,9 @@ def download():
             download_name='playlist.m3u',
             mimetype='application/x-mpegurl'
         )
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception as exc:
+        app.logger.exception('download failed')
+        return jsonify({'error': str(exc)}), 500
     finally:
         # 清理临时文件
         if 'temp_path' in locals():

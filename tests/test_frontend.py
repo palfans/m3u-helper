@@ -37,9 +37,18 @@ class FrontendTests(unittest.TestCase):
     def test_script_uses_batch_check_and_report_endpoints(self):
         script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")
 
-        self.assertIn("fetch('/check-all'", script)
-        self.assertIn("fetch('/report'", script)
-        self.assertIn("workers: Number(dom.checkWorkers.value)", script)
+        self.assertIn("fetchResponse('/check-all'", script)
+        self.assertIn("fetchResponse('/report'", script)
+        self.assertIn("body: JSON.stringify({ entries: batch, workers })", script)
+
+    def test_script_batches_long_check_requests(self):
+        script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")
+
+        self.assertIn("const batchSize = Math.max(1, workers * 2);", script)
+        self.assertIn("for (let start = 0; start < state.entries.length; start += batchSize)", script)
+        self.assertIn("const batch = state.entries.slice(start, start + batchSize);", script)
+        self.assertIn("state.results.splice(start, batch.length", script)
+        self.assertIn("连接失败", script)
 
     def test_script_cleans_stale_results_and_blob_urls(self):
         script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")
@@ -81,6 +90,12 @@ class FrontendTests(unittest.TestCase):
         for option in ('value="1"', 'value="2"', 'value="3"', 'value="5"'):
             with self.subTest(option=option):
                 self.assertIn(option, page)
+
+    def test_styles_use_light_theme_palette(self):
+        styles = (ROOT / "static" / "css" / "style.css").read_text(encoding="utf-8")
+
+        self.assertIn("--page: #f4f7fb", styles)
+        self.assertNotIn("--page: #0b1324", styles)
 
 
 if __name__ == "__main__":
