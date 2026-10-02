@@ -97,6 +97,29 @@ class AppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["total"], 2)
 
+    def test_check_all_accepts_worker_count_from_request(self):
+        response = self.client.post(
+            "/check-all",
+            json={
+                "workers": 2,
+                "entries": [{"title": "one", "url": "ftp://example.test/one.m3u8"}],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["total"], 1)
+
+    def test_check_all_rejects_unsupported_worker_count(self):
+        response = self.client.post(
+            "/check-all",
+            json={
+                "workers": 4,
+                "entries": [{"title": "one", "url": "ftp://example.test/one.m3u8"}],
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+
     def test_video_info_rejects_missing_json_body(self):
         response = self.client.post("/video-info", data="bad", content_type="text/plain")
 

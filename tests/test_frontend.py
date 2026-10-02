@@ -39,6 +39,7 @@ class FrontendTests(unittest.TestCase):
 
         self.assertIn("fetch('/check-all'", script)
         self.assertIn("fetch('/report'", script)
+        self.assertIn("workers: Number(dom.checkWorkers.value)", script)
 
     def test_script_cleans_stale_results_and_blob_urls(self):
         script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")
@@ -69,8 +70,17 @@ class FrontendTests(unittest.TestCase):
             "清晰检查每一个播放地址",
         ):
             self.assertNotIn(removed_copy, page)
-        self.assertIn('title="按列表顺序检查所有条目"', page)
+        self.assertIn('title="按所选并发数检查所有条目"', page)
         self.assertIn('title="当前播放列表的总条目数"', page)
+
+    def test_page_exposes_concurrency_selector(self):
+        page = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+
+        self.assertNotIn('id="pageTitle"', page)
+        self.assertIn('id="checkWorkers"', page)
+        for option in ('value="1"', 'value="2"', 'value="3"', 'value="5"'):
+            with self.subTest(option=option):
+                self.assertIn(option, page)
 
 
 if __name__ == "__main__":

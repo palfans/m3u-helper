@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#0d172a">
-    <title>M3U Helper · 播放列表检查</title>
+    <title>M3U Helper</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
@@ -24,10 +24,6 @@
         </header>
 
         <main class="page-content">
-            <section class="intro-grid" aria-labelledby="pageTitle">
-                <h1 id="pageTitle">播放列表检查</h1>
-            </section>
-
             <section class="source-card panel" aria-labelledby="sourceTitle">
                 <div class="panel-heading">
                     <h2 id="sourceTitle">导入播放列表</h2>
@@ -65,7 +61,16 @@
                         <h2 id="playlistTitle" title="支持拖动项目调整顺序">播放列表</h2>
                     </div>
                     <div class="action-group" aria-label="播放列表操作">
-                        <button type="button" class="button button-secondary" id="checkAllBtn" title="按列表顺序检查所有条目">
+                        <label class="concurrency-control" for="checkWorkers" title="选择同时检查的地址数量">
+                            <span>并发</span>
+                            <select id="checkWorkers" aria-label="并发数">
+                                <option value="1" selected>1（顺序）</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="5">5</option>
+                            </select>
+                        </label>
+                        <button type="button" class="button button-secondary" id="checkAllBtn" title="按所选并发数检查所有条目">
                             <span class="button-pulse" aria-hidden="true"></span>
                             检查全部
                         </button>
@@ -93,7 +98,7 @@
                     </article>
                 </div>
 
-                <div class="progress-panel" id="progressPanel" title="默认按列表顺序检查，避免同时请求过多地址">
+                <div class="progress-panel" id="progressPanel" title="并发数由上方选择决定">
                     <div class="progress-heading">
                         <div>
                             <strong id="progressTitle">准备检查</strong>

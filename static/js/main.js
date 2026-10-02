@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
         summaryAvailable: get('summaryAvailable'),
         summaryErrors: get('summaryErrors'),
         summaryPending: get('summaryPending'),
+        checkWorkers: get('checkWorkers'),
         checkAllButton: get('checkAllBtn'),
         reportButton: get('reportBtn'),
         downloadButton: get('downloadBtn'),
@@ -193,12 +194,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const total = state.entries.length;
         const checked = state.results.filter(Boolean).length;
         const percent = total ? Math.round((checked / total) * 100) : 0;
+        const workers = Number(dom.checkWorkers.value);
         dom.progressLabel.textContent = `${checked} / ${total}`;
         dom.progressBar.style.width = `${percent}%`;
         dom.progressPanel.classList.toggle('is-running', state.checking);
         if (state.checking) {
-            dom.progressTitle.textContent = '正在顺序检查';
-            dom.currentChecking.textContent = `顺序检查中 · ${total} 条`;
+            const mode = workers === 1 ? '顺序检查' : `${workers} 路并发检查`;
+            dom.progressTitle.textContent = `正在${mode}`;
+            dom.currentChecking.textContent = `${mode} · ${total} 条`;
         } else if (total && checked === total) {
             dom.progressTitle.textContent = '检查完成';
             dom.currentChecking.textContent = '全部完成';
@@ -215,6 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const hasEntries = state.entries.length > 0;
         dom.dashboard.classList.toggle('is-hidden', !hasEntries);
         dom.checkAllButton.disabled = !hasEntries || state.checking;
+        dom.checkWorkers.disabled = !hasEntries || state.checking;
         dom.reportButton.classList.toggle('is-hidden', !hasEntries);
         dom.reportButton.disabled = !state.sourceUrl || state.checking;
         dom.reportButton.title = state.sourceUrl ? '下载当前地址的 HTML 探测报告' : '上传文件后无法生成远程地址报告';
@@ -722,7 +726,9 @@ document.addEventListener('DOMContentLoaded', () => {
         state.checking = true;
         state.results = state.entries.map(() => null);
         updateCards();
-        setConnection('正在按顺序检查', 'busy');
+        const workers = Number(dom.checkWorkers.value);
+        const mode = workers === 1 ? '顺序检查' : `${workers} 路并发检查`;
+        setConnection(`正在${mode}`, 'busy');
         setSourceState('检查进行中', 'busy');
         const controller = new AbortController();
         state.checkController = controller;
@@ -731,7 +737,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/check-all', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entries: state.entries }),
+                body: JSON.stringify({ entries: state.entries, workers: Number(dom.checkWorkers.value) }),
                 signal: controller.signal,
             });
             const data = await readJsonResponse(response);

@@ -15,6 +15,7 @@ app.config['PROBE_TIMEOUT'] = int(os.environ.get('M3U_HELPER_PROBE_TIMEOUT', '10
 app.config['CHECK_WORKERS'] = int(os.environ.get('M3U_HELPER_CHECK_WORKERS', '1'))
 if app.config['CHECK_WORKERS'] < 1:
     raise ValueError('M3U_HELPER_CHECK_WORKERS 必须大于或等于 1')
+CHECK_WORKER_OPTIONS = (1, 2, 3, 5)
 
 # 确保上传目录存在
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -84,6 +85,15 @@ def check_video_status(entry):
         'status': status,
         'details': details
     }
+
+
+def get_check_workers(payload):
+    if 'workers' not in payload:
+        return app.config['CHECK_WORKERS']
+    workers = payload['workers']
+    if isinstance(workers, bool) or not isinstance(workers, int) or workers not in CHECK_WORKER_OPTIONS:
+        raise ValueError('并发数必须是 1、2、3 或 5')
+    return workers
 
 @app.route('/')
 def index():
@@ -155,12 +165,17 @@ def check_all():
     entries = payload.get('entries', [])
     if not isinstance(entries, list) or not entries:
         return jsonify({'error': '没有需要检查的视频'}), 400
-    
+
     try:
-        if app.config['CHECK_WORKERS'] == 1:
+        workers = get_check_workers(payload)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    try:
+        if workers == 1:
             results = [check_video_status(entry) for entry in entries]
         else:
-            with ThreadPoolExecutor(max_workers=app.config['CHECK_WORKERS']) as executor:
+            with ThreadPoolExecutor(max_workers=workers) as executor:
                 results = list(executor.map(check_video_status, entries))
         return jsonify({
             'total': len(results),

@@ -157,29 +157,10 @@ select:focus-visible,
     padding: 72px 0 48px;
 }
 
-.intro-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 280px;
-    gap: 48px;
-    align-items: end;
-    margin-bottom: 40px;
-}
-
-h1,
 h2,
 h3,
 p {
     margin-top: 0;
-}
-
-h1 {
-    max-width: 720px;
-    margin-bottom: 16px;
-    color: #f6f8fc;
-    font-size: clamp(2.2rem, 5.4vw, 4.5rem);
-    font-weight: 800;
-    letter-spacing: -0.07em;
-    line-height: 1.04;
 }
 
 .panel {
@@ -458,6 +439,29 @@ h2 {
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: 8px;
+}
+
+.concurrency-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 40px;
+    padding: 0 9px;
+    border: 1px solid var(--line-strong);
+    border-radius: 9px;
+    color: var(--muted);
+    background: rgba(255, 255, 255, 0.02);
+    font-size: 11px;
+}
+
+.concurrency-control select {
+    min-height: 28px;
+    padding: 0 1px;
+    border: 0;
+    outline: 0;
+    color: var(--ink);
+    background: transparent;
+    font-size: 11px;
 }
 
 .stats-grid {
@@ -1114,11 +1118,6 @@ h2 {
 }
 
 @media (max-width: 820px) {
-    .intro-grid {
-        grid-template-columns: 1fr;
-        gap: 24px;
-    }
-
     .stats-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -1157,10 +1156,6 @@ h2 {
 
     .page-content {
         padding-top: 47px;
-    }
-
-    h1 {
-        font-size: clamp(2.1rem, 12vw, 3.3rem);
     }
 
     .url-entry {
