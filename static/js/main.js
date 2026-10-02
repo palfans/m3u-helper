@@ -45,6 +45,8 @@ document.addEventListener('DOMContentLoaded', () => {
         parseController: null,
         checkController: null,
         infoController: null,
+        reportController: null,
+        downloadController: null,
         objectUrls: new Set(),
     };
 
@@ -123,9 +125,13 @@ document.addEventListener('DOMContentLoaded', () => {
         state.parseController?.abort();
         state.checkController?.abort();
         state.infoController?.abort();
+        state.reportController?.abort();
+        state.downloadController?.abort();
         state.parseController = null;
         state.checkController = null;
         state.infoController = null;
+        state.reportController = null;
+        state.downloadController = null;
         state.entries = [];
         state.results = [];
         state.sourceUrl = '';
@@ -647,11 +653,16 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         dom.reportButton.disabled = true;
+        state.reportController?.abort();
+        const controller = new AbortController();
+        state.reportController = controller;
+        const token = state.requestToken;
         try {
             const response = await fetch('/report', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url: state.sourceUrl }),
+                signal: controller.signal,
             });
             if (!response.ok) {
                 await readJsonResponse(response);
@@ -659,9 +670,14 @@ document.addEventListener('DOMContentLoaded', () => {
             createDownload(await response.blob(), 'm3u8-report.html');
             showToast('HTML 报告已下载', 'success');
         } catch (error) {
-            showToast(error.message || '报告生成失败', 'error');
+            if (error.name !== 'AbortError' && token === state.requestToken) {
+                showToast(error.message || '报告生成失败', 'error');
+            }
         } finally {
-            updateActionState();
+            if (state.reportController === controller) {
+                state.reportController = null;
+                updateActionState();
+            }
         }
     }
 
@@ -670,11 +686,16 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         dom.downloadButton.disabled = true;
+        state.downloadController?.abort();
+        const controller = new AbortController();
+        state.downloadController = controller;
+        const token = state.requestToken;
         try {
             const response = await fetch('/download', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ entries: state.entries }),
+                signal: controller.signal,
             });
             if (!response.ok) {
                 await readJsonResponse(response);
@@ -682,9 +703,14 @@ document.addEventListener('DOMContentLoaded', () => {
             createDownload(await response.blob(), 'playlist.m3u');
             showToast('M3U 文件已导出', 'success');
         } catch (error) {
-            showToast(error.message || '导出失败', 'error');
+            if (error.name !== 'AbortError' && token === state.requestToken) {
+                showToast(error.message || '导出失败', 'error');
+            }
         } finally {
-            updateActionState();
+            if (state.downloadController === controller) {
+                state.downloadController = null;
+                updateActionState();
+            }
         }
     }
 
@@ -789,9 +815,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             if (state.parseController === controller) {
                 state.parseController = null;
+                setParsingState(false);
+                updateActionState();
             }
-            setParsingState(false);
-            updateActionState();
         }
     });
 

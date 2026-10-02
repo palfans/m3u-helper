@@ -47,6 +47,16 @@ class FrontendTests(unittest.TestCase):
         self.assertIn("clearStaleState", script)
         self.assertIn("applyFilters", script)
 
+    def test_script_guards_stale_parse_cleanup(self):
+        script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "if (state.parseController === controller) {\n                state.parseController = null;\n                setParsingState(false);",
+            script,
+        )
+        self.assertIn("state.reportController?.abort();", script)
+        self.assertIn("state.downloadController?.abort();", script)
+
 
 if __name__ == "__main__":
     unittest.main()
