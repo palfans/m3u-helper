@@ -21,7 +21,7 @@ max_requests = int(os.getenv("MAX_REQUESTS", 1000))
 max_requests_jitter = int(os.getenv("MAX_REQUESTS_JITTER", 50))
 
 # 日志配置
-accesslog = "-"  # 标准输出
+accesslog = None  # 请求详情由 Flask 以 DEBUG 级别记录
 errorlog = "-"   # 标准错误输出
 loglevel = "info"
 

@@ -640,10 +640,29 @@ h2 {
     font-size: 13px;
 }
 
-.selection-actions {
+.selection-float {
+    position: fixed;
+    right: clamp(16px, 3vw, 34px);
+    bottom: clamp(16px, 3vw, 34px);
+    z-index: 20;
     display: inline-flex;
     align-items: center;
     gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--line-strong);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 18px 40px rgba(40, 58, 88, 0.18);
+    backdrop-filter: blur(18px);
+}
+
+.selection-float .selected-count {
+    color: var(--ink);
+    font-weight: 700;
+}
+
+body:has(.selection-float:not(.is-hidden)) .page-content {
+    padding-bottom: 110px;
 }
 
 .selected-count {
@@ -1277,6 +1296,16 @@ h2 {
 
     .visible-count {
         margin-left: 0;
+    }
+
+    .selection-float {
+        right: 16px;
+        left: 16px;
+        justify-content: space-between;
+    }
+
+    .selection-float .button {
+        flex: 1;
     }
 
     .playlist-item {

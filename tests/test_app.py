@@ -1,9 +1,14 @@
 import io
+import logging
+from pathlib import Path
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from app import app, generate_m3u
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class AppPlaylistHandler(BaseHTTPRequestHandler):
@@ -94,6 +99,36 @@ class AppTests(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(data["total"], 1)
         self.assertEqual(data["results"][0]["status"], "error")
+
+    def test_check_all_logs_video_progress_at_info(self):
+        entry = {"title": "坏地址", "url": "ftp://example.test/live.m3u8"}
+
+        with self.assertLogs("app", level="INFO") as captured:
+            response = self.client.post("/check-all", json={"entries": [entry]})
+
+        self.assertEqual(response.status_code, 200)
+        output = "\n".join(captured.output)
+        self.assertIn("check video started: title=坏地址", output)
+        self.assertIn("check video completed: title=坏地址", output)
+        self.assertIn("status=error", output)
+        self.assertIn("method=validation", output)
+
+    def test_request_details_are_logged_at_debug(self):
+        with self.assertLogs("app", level="DEBUG") as captured:
+            response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        request_records = [
+            record for record in captured.records if record.getMessage().startswith("request:")
+        ]
+        self.assertEqual(len(request_records), 1)
+        self.assertEqual(request_records[0].levelno, logging.DEBUG)
+        self.assertIn("method=GET path=/ status=200", request_records[0].getMessage())
+
+    def test_gunicorn_access_log_is_disabled(self):
+        config = (ROOT / "gunicorn.conf.py").read_text(encoding="utf-8")
+
+        self.assertIn("accesslog = None", config)
 
     def test_check_all_worker_count_is_configurable(self):
         app.config["CHECK_WORKERS"] = 2

@@ -67,6 +67,18 @@ class FrontendTests(unittest.TestCase):
         self.assertIn("const scopeIndexes = Array.from(state.selected)", script)
         self.assertIn("checkSelected", script)
 
+    def test_page_exposes_floating_selection_action(self):
+        page = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")
+        styles = (ROOT / "static" / "css" / "style.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="selectionFloat"', page)
+        self.assertIn('class="selection-float is-hidden"', page)
+        self.assertNotIn('class="selection-actions"', page)
+        self.assertIn("selectionFloat: get('selectionFloat')", script)
+        self.assertIn("dom.selectionFloat.classList.toggle('is-hidden', selected === 0);", script)
+        self.assertIn(".selection-float", styles)
+
     def test_script_supports_stopping_checks(self):
         page = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
         script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")

@@ -19,6 +19,17 @@ if app.config['CHECK_WORKERS'] < 1:
     raise ValueError('M3U_HELPER_CHECK_WORKERS 必须大于或等于 1')
 CHECK_WORKER_OPTIONS = (1, 2, 3, 5)
 
+
+@app.after_request
+def log_request(response):
+    app.logger.debug(
+        'request: method=%s path=%s status=%d',
+        request.method,
+        request.path,
+        response.status_code,
+    )
+    return response
+
 # 确保上传目录存在
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
@@ -70,14 +81,24 @@ def get_thumbnail(url):
         return {'thumbnail': None, 'thumbnail_error': str(exc)}
 
 def check_video_status(entry):
+    title = entry.get('title', '') if isinstance(entry, dict) else ''
+    url = entry.get('url', '') if isinstance(entry, dict) else ''
+    host = log_url(url) if isinstance(url, str) else 'unknown'
+    app.logger.info('check video started: title=%s host=%s', title, host)
     if not isinstance(entry, dict):
-        return {
+        result = {
             'title': '',
             'url': '',
             'status': 'error',
             'details': {'error': '列表项必须是 JSON 对象'},
         }
-    url = entry.get('url', '')
+        app.logger.info(
+            'check video completed: title=%s host=%s status=error method=validation error=%s',
+            title,
+            host,
+            result['details']['error'],
+        )
+        return result
     try:
         info = get_video_info(url)
     except ValueError as exc:
@@ -95,12 +116,22 @@ def check_video_status(entry):
     }
     if not info.get('available'):
         details['error'] = info.get('error', '无法读取视频信息')
-    return {
+    result = {
         'title': entry.get('title', ''),
         'url': url,
         'status': status,
         'details': details
     }
+    error_suffix = f" error={details['error']}" if details.get('error') else ''
+    app.logger.info(
+        'check video completed: title=%s host=%s status=%s method=%s%s',
+        title,
+        host,
+        status,
+        details['method'],
+        error_suffix,
+    )
+    return result
 
 
 def get_check_workers(payload):

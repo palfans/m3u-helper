@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
         playlistSearch: get('playlistSearch'),
         statusFilter: get('statusFilter'),
         groupFilter: get('groupFilter'),
+        selectionFloat: get('selectionFloat'),
         selectedCount: get('selectedCount'),
         checkSelectedButton: get('checkSelectedBtn'),
         visibleCount: get('visibleCount'),
@@ -274,6 +275,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateSelectionControls() {
         const selected = state.selected.size;
+        dom.selectionFloat.classList.toggle('is-hidden', selected === 0);
         dom.selectedCount.textContent = `已选 ${selected}`;
         dom.checkSelectedButton.disabled = selected === 0 || state.checking;
         dom.checkSelectedButton.title = selected ? `检查已选的 ${selected} 条视频` : '请选择视频后检查';
