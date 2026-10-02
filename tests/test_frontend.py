@@ -22,6 +22,8 @@ class FrontendTests(unittest.TestCase):
             "playlistSearch",
             "statusFilter",
             "groupFilter",
+            "selectedCount",
+            "checkSelectedBtn",
             "progressPanel",
             "emptyState",
             "toastContainer",
@@ -52,6 +54,24 @@ class FrontendTests(unittest.TestCase):
         self.assertIn("getGroupIndexes", script)
         self.assertIn("state.groupFilter", script)
         self.assertIn("const scopeIndexes = getGroupIndexes();", script)
+
+    def test_script_supports_manual_selection_checks(self):
+        page = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")
+
+        self.assertIn("entry-select", script)
+        self.assertIn('id="selectedCount"', page)
+        self.assertIn('id="checkSelectedBtn"', page)
+        self.assertIn("state.selected", script)
+        self.assertIn("const scopeIndexes = Array.from(state.selected)", script)
+        self.assertIn("checkSelected", script)
+
+    def test_styles_increase_reading_sizes(self):
+        styles = (ROOT / "static" / "css" / "style.css").read_text(encoding="utf-8")
+
+        self.assertIn(".item-title-group h3 {\n    overflow: hidden;\n    margin: 2px 0 7px;\n    color: var(--ink);\n    font-size: 16px;", styles)
+        self.assertIn(".item-url {\n    display: block;", styles)
+        self.assertIn("    font-size: 12px;\n    text-overflow: ellipsis;", styles)
 
     def test_script_renders_on_demand_thumbnail(self):
         script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")

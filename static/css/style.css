@@ -134,7 +134,7 @@ select:focus-visible,
     align-items: center;
     gap: 8px;
     color: var(--muted);
-    font-size: 12px;
+    font-size: 13px;
 }
 
 .status-dot {
@@ -284,7 +284,7 @@ h2 {
     color: var(--ink);
     background: transparent;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 700;
     line-height: 1;
     transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, color 160ms ease, opacity 160ms ease;
@@ -349,7 +349,7 @@ h2 {
     gap: 15px;
     margin: 22px 0;
     color: var(--subtle);
-    font-size: 11px;
+    font-size: 12px;
 }
 
 .import-divider::before,
@@ -408,7 +408,7 @@ h2 {
 .file-copy strong {
     overflow: hidden;
     color: var(--ink);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -416,14 +416,14 @@ h2 {
 
 .file-copy small {
     color: var(--subtle);
-    font-size: 10px;
+    font-size: 11px;
 }
 
 .source-footer {
     margin-top: 20px;
     color: var(--subtle);
     font-family: 'DM Mono', ui-monospace, monospace;
-    font-size: 10px;
+    font-size: 12px;
 }
 
 .dashboard {
@@ -452,7 +452,7 @@ h2 {
     border-radius: 9px;
     color: var(--muted);
     background: rgba(255, 255, 255, 0.78);
-    font-size: 11px;
+    font-size: 13px;
 }
 
 .concurrency-control select {
@@ -462,7 +462,7 @@ h2 {
     outline: 0;
     color: var(--ink);
     background: transparent;
-    font-size: 11px;
+    font-size: 13px;
 }
 
 .stats-grid {
@@ -503,7 +503,7 @@ h2 {
 
 .stat-label {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
 }
 
 .stat-card strong {
@@ -534,13 +534,13 @@ h2 {
 }
 
 .progress-heading strong {
-    font-size: 12px;
+    font-size: 13px;
 }
 
 .progress-heading > strong {
     color: var(--cyan);
     font-family: 'DM Mono', ui-monospace, monospace;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
 }
 
@@ -569,7 +569,7 @@ h2 {
 .progress-message {
     margin: 11px 0 0;
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
 }
 
 .playlist-toolbar {
@@ -607,7 +607,7 @@ h2 {
     outline: 0;
     color: var(--ink);
     background: transparent;
-    font-size: 12px;
+    font-size: 14px;
 }
 
 .filter-field {
@@ -615,7 +615,7 @@ h2 {
     align-items: center;
     gap: 8px;
     color: var(--subtle);
-    font-size: 11px;
+    font-size: 13px;
 }
 
 .filter-field select {
@@ -626,14 +626,26 @@ h2 {
     outline: 0;
     color: var(--muted);
     background: rgba(255, 255, 255, 0.78);
+    font-size: 13px;
+}
+
+.selection-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.selected-count {
+    color: var(--muted);
     font-size: 12px;
+    white-space: nowrap;
 }
 
 .visible-count {
     margin-left: auto;
     color: var(--subtle);
     font-family: 'DM Mono', ui-monospace, monospace;
-    font-size: 10px;
+    font-size: 12px;
 }
 
 .playlist {
@@ -697,6 +709,27 @@ h2 {
     gap: 10px;
 }
 
+.selection-control {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+    place-items: center;
+    cursor: pointer;
+}
+
+.entry-select {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--cyan-strong);
+    cursor: pointer;
+}
+
+.entry-select:disabled {
+    cursor: not-allowed;
+}
+
 .item-number {
     display: grid;
     width: 28px;
@@ -714,7 +747,7 @@ h2 {
     overflow: hidden;
     margin: 2px 0 7px;
     color: var(--ink);
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 700;
     letter-spacing: -0.02em;
     text-overflow: ellipsis;
@@ -734,7 +767,7 @@ h2 {
     overflow: hidden;
     color: var(--subtle);
     font-family: 'DM Mono', ui-monospace, monospace;
-    font-size: 10px;
+    font-size: 12px;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -743,7 +776,7 @@ h2 {
     min-height: 23px;
     padding: 0 7px;
     flex: 0 0 auto;
-    font-size: 9px;
+    font-size: 11px;
 }
 
 .item-actions {
@@ -761,7 +794,7 @@ h2 {
     color: var(--muted);
     background: transparent;
     cursor: pointer;
-    font-size: 10px;
+    font-size: 12px;
     transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
 }
 
@@ -788,7 +821,7 @@ h2 {
     min-height: 25px;
     padding: 0 9px;
     border-radius: 999px;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 700;
 }
 
@@ -816,7 +849,7 @@ h2 {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    margin: 15px 0 0 38px;
+    margin: 15px 0 0 76px;
 }
 
 .chip {
@@ -829,17 +862,17 @@ h2 {
     color: var(--muted);
     background: rgba(148, 163, 184, 0.06);
     font-family: 'DM Mono', ui-monospace, monospace;
-    font-size: 9px;
+    font-size: 11px;
 }
 
 .result-panel {
-    margin: 15px 0 0 38px;
+    margin: 15px 0 0 76px;
     padding: 13px;
     border: 1px solid var(--line);
     border-radius: 10px;
     color: var(--muted);
     background: rgba(255, 255, 255, 0.65);
-    font-size: 11px;
+    font-size: 12px;
 }
 
 .result-panel.result-ok {
@@ -875,7 +908,7 @@ h2 {
     display: block;
     margin-bottom: 5px;
     color: var(--subtle);
-    font-size: 9px;
+    font-size: 10px;
 }
 
 .result-value strong,
@@ -884,7 +917,7 @@ h2 {
     overflow: hidden;
     color: var(--ink);
     font-family: 'DM Mono', ui-monospace, monospace;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -908,13 +941,13 @@ h2 {
 .stream-label {
     min-width: 35px;
     color: var(--subtle);
-    font-size: 10px;
+    font-size: 11px;
 }
 
 .stream-value {
     color: var(--ink);
     font-family: 'DM Mono', ui-monospace, monospace;
-    font-size: 10px;
+    font-size: 11px;
 }
 
 .error-copy {

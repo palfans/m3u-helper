@@ -14,6 +14,8 @@ document.addEventListener('DOMContentLoaded', () => {
         playlistSearch: get('playlistSearch'),
         statusFilter: get('statusFilter'),
         groupFilter: get('groupFilter'),
+        selectedCount: get('selectedCount'),
+        checkSelectedButton: get('checkSelectedBtn'),
         visibleCount: get('visibleCount'),
         emptyState: get('emptyState'),
         filterEmpty: get('filterEmpty'),
@@ -41,6 +43,8 @@ document.addEventListener('DOMContentLoaded', () => {
         entries: [],
         results: [],
         groupFilter: 'all',
+        selected: new Set(),
+        checkScope: null,
         sourceUrl: '',
         checking: false,
         requestToken: 0,
@@ -138,6 +142,8 @@ document.addEventListener('DOMContentLoaded', () => {
         state.downloadController = null;
         state.entries = [];
         state.results = [];
+        state.selected.clear();
+        state.checkScope = null;
         state.sourceUrl = '';
         state.checking = false;
         clearDownloadUrls();
@@ -200,6 +206,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }, []);
     }
 
+    function getScopeIndexes() {
+        return state.checkScope || getGroupIndexes();
+    }
+
     function updateGroupOptions() {
         const counts = new Map();
         let ungrouped = 0;
@@ -223,7 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateSummary() {
-        const indexes = getGroupIndexes();
+        const indexes = getScopeIndexes();
         const total = indexes.length;
         const available = indexes.filter((index) => state.results[index]?.status === 'ok').length;
         const errors = indexes.filter((index) => state.results[index]?.status === 'error').length;
@@ -235,7 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateProgress() {
-        const indexes = getGroupIndexes();
+        const indexes = getScopeIndexes();
         const total = indexes.length;
         const checked = indexes.filter((index) => state.results[index]).length;
         const percent = total ? Math.round((checked / total) * 100) : 0;
@@ -259,12 +269,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function updateSelectionControls() {
+        const selected = state.selected.size;
+        dom.selectedCount.textContent = `已选 ${selected}`;
+        dom.checkSelectedButton.disabled = selected === 0 || state.checking;
+        dom.checkSelectedButton.title = selected ? `检查已选的 ${selected} 条视频` : '请选择视频后检查';
+        Array.from(dom.playlist.children).forEach((card) => {
+            const checkbox = card.querySelector('.entry-select');
+            if (checkbox) {
+                checkbox.checked = state.selected.has(Number(card.dataset.index));
+                checkbox.disabled = state.checking;
+            }
+        });
+    }
+
     function updateActionState() {
         const hasEntries = state.entries.length > 0;
         dom.dashboard.classList.toggle('is-hidden', !hasEntries);
         dom.checkAllButton.disabled = !hasEntries || state.checking;
         dom.checkWorkers.disabled = !hasEntries || state.checking;
         dom.groupFilter.disabled = !hasEntries || state.checking;
+        dom.checkSelectedButton.disabled = state.selected.size === 0 || state.checking;
         dom.reportButton.classList.toggle('is-hidden', !hasEntries);
         dom.reportButton.disabled = !state.sourceUrl || state.checking;
         dom.reportButton.title = state.sourceUrl ? '下载当前地址的 HTML 探测报告' : '上传文件后无法生成远程地址报告';
@@ -277,6 +302,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             setCheckButtonLabel('检查本组');
         }
+        updateSelectionControls();
     }
 
     function addChip(container, value) {
@@ -409,6 +435,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const titleGroup = document.createElement('div');
         titleGroup.className = 'item-title-group';
+        const selectionLabel = document.createElement('label');
+        selectionLabel.className = 'selection-control';
+        selectionLabel.title = '选择此视频';
+        const selection = document.createElement('input');
+        selection.type = 'checkbox';
+        selection.className = 'entry-select';
+        selection.checked = state.selected.has(index);
+        selection.setAttribute('aria-label', `选择 ${text(entry.title, '视频')}`);
+        selection.addEventListener('change', () => {
+            if (selection.checked) {
+                state.selected.add(index);
+            } else {
+                state.selected.delete(index);
+            }
+            state.checkScope = null;
+            updateSummary();
+            updateProgress();
+            updateActionState();
+        });
+        selectionLabel.appendChild(selection);
         const number = document.createElement('span');
         number.className = 'item-number';
         number.textContent = String(index + 1).padStart(2, '0');
@@ -424,7 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
         copyButton.addEventListener('click', () => copyUrl(entry.url));
         urlRow.append(url, copyButton);
         titleBlock.append(title, urlRow);
-        titleGroup.append(number, titleBlock);
+        titleGroup.append(selectionLabel, number, titleBlock);
 
         const actions = document.createElement('div');
         actions.className = 'item-actions';
@@ -507,6 +553,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (order.some((index) => !Number.isInteger(index))) {
             return;
         }
+        state.selected = new Set(order.reduce((selected, oldIndex, newIndex) => {
+            if (state.selected.has(oldIndex)) {
+                selected.push(newIndex);
+            }
+            return selected;
+        }, []));
+        state.checkScope = null;
         state.entries = order.map((index) => state.entries[index]);
         state.results = order.map((index) => state.results[index]);
         renderPlaylist();
@@ -518,6 +571,16 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('检查进行中，完成后再修改列表', 'info');
             return;
         }
+        const selected = new Set();
+        state.selected.forEach((selectedIndex) => {
+            if (selectedIndex < index) {
+                selected.add(selectedIndex);
+            } else if (selectedIndex > index) {
+                selected.add(selectedIndex - 1);
+            }
+        });
+        state.selected = selected;
+        state.checkScope = null;
         state.entries.splice(index, 1);
         state.results.splice(index, 1);
         updateGroupOptions();
@@ -831,11 +894,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function checkAll() {
-        const scopeIndexes = getGroupIndexes();
+    async function runCheck(scopeIndexes) {
         if (!scopeIndexes.length || state.checking) {
             return;
         }
+        state.checkScope = [...scopeIndexes];
         state.checking = true;
         scopeIndexes.forEach((index) => {
             state.results[index] = null;
@@ -895,6 +958,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 setSourceState('已载入', 'loaded');
             }
         }
+    }
+
+    async function checkAll() {
+        const scopeIndexes = getGroupIndexes();
+        return runCheck(scopeIndexes);
+    }
+
+    async function checkSelected() {
+        const scopeIndexes = Array.from(state.selected).sort((left, right) => left - right);
+        return runCheck(scopeIndexes);
     }
 
     dom.form.addEventListener('submit', async (event) => {
@@ -977,12 +1050,14 @@ document.addEventListener('DOMContentLoaded', () => {
     dom.statusFilter.addEventListener('change', applyFilters);
     dom.groupFilter.addEventListener('change', () => {
         state.groupFilter = dom.groupFilter.value;
+        state.checkScope = null;
         applyFilters();
         updateSummary();
         updateProgress();
         updateActionState();
     });
     dom.checkAllButton.addEventListener('click', checkAll);
+    dom.checkSelectedButton.addEventListener('click', checkSelected);
     dom.reportButton.addEventListener('click', downloadReport);
     dom.downloadButton.addEventListener('click', downloadPlaylist);
     dom.closeModalButton.addEventListener('click', () => dom.videoInfoModal.close());
