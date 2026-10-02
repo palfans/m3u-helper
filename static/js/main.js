@@ -486,11 +486,13 @@ document.addEventListener('DOMContentLoaded', () => {
         badge.className = 'status-badge status-pending';
         badge.textContent = statusLabels.pending;
         badge.setAttribute('aria-live', 'polite');
+        const checkButton = makeButton('检查', 'small-button check-button', '检查此视频');
+        checkButton.addEventListener('click', () => checkEntry(index));
         const infoButton = makeButton('详情', 'small-button', '查看视频和音频信息');
         infoButton.addEventListener('click', () => openDetails(index));
         const deleteButton = makeButton('删除', 'small-button danger', '从当前列表移除');
         deleteButton.addEventListener('click', () => removeEntry(index));
-        actions.append(badge, infoButton, deleteButton);
+        actions.append(badge, checkButton, infoButton, deleteButton);
         header.append(titleGroup, actions);
 
         const chips = document.createElement('div');
@@ -995,6 +997,10 @@ document.addEventListener('DOMContentLoaded', () => {
     async function checkSelected() {
         const scopeIndexes = Array.from(state.selected).sort((left, right) => left - right);
         return runCheck(scopeIndexes);
+    }
+
+    async function checkEntry(index) {
+        return runCheck([index]);
     }
 
     dom.form.addEventListener('submit', async (event) => {

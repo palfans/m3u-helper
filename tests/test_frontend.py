@@ -67,6 +67,14 @@ class FrontendTests(unittest.TestCase):
         self.assertIn("const scopeIndexes = Array.from(state.selected)", script)
         self.assertIn("checkSelected", script)
 
+    def test_script_supports_single_entry_checks(self):
+        script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")
+
+        self.assertIn("makeButton('检查', 'small-button check-button'", script)
+        self.assertIn("function checkEntry(index)", script)
+        self.assertIn("return runCheck([index]);", script)
+        self.assertIn("checkEntry(index)", script)
+
     def test_page_exposes_floating_selection_action(self):
         page = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
         script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")
