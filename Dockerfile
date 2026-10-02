@@ -1,8 +1,9 @@
 FROM python:3.10-slim
 
 # 安装ffmpeg和curl（用于健康检查）
-RUN apt-get update && \
-    apt-get install -y ffmpeg curl && \
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources && \
+    apt-get -o Acquire::Retries=5 -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false update && \
+    apt-get -o Acquire::Retries=5 -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false install -y --no-install-recommends ca-certificates ffmpeg curl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
