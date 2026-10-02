@@ -48,7 +48,9 @@ def generate_m3u(entries):
     """生成M3U文件内容"""
     content = ['#EXTM3U']
     for entry in entries:
-        content.append(f'#EXTINF:{entry["duration"]},{entry["title"]}')
+        groups = entry.get('groups') or []
+        group_attribute = f' group-title="{groups[0]}"' if groups else ''
+        content.append(f'#EXTINF:{entry["duration"]}{group_attribute},{entry["title"]}')
         content.append(entry['url'])
     return '\n'.join(content)
 

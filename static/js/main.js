@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
         playlist: get('playlist'),
         playlistSearch: get('playlistSearch'),
         statusFilter: get('statusFilter'),
+        groupFilter: get('groupFilter'),
         visibleCount: get('visibleCount'),
         emptyState: get('emptyState'),
         filterEmpty: get('filterEmpty'),
@@ -39,6 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const state = {
         entries: [],
         results: [],
+        groupFilter: 'all',
         sourceUrl: '',
         checking: false,
         requestToken: 0,
@@ -145,6 +147,9 @@ document.addEventListener('DOMContentLoaded', () => {
         dom.filterEmpty.classList.add('is-hidden');
         dom.playlistSearch.value = '';
         dom.statusFilter.value = 'all';
+        dom.groupFilter.replaceChildren(new Option('全部分组', 'all'));
+        dom.groupFilter.value = 'all';
+        state.groupFilter = 'all';
         dom.visibleCount.textContent = '显示 0 条';
         dom.toastContainer.replaceChildren();
         if (dom.videoInfoModal.open) {
@@ -179,10 +184,49 @@ document.addEventListener('DOMContentLoaded', () => {
         return state.results[index]?.status || 'pending';
     }
 
+    function entryGroups(entry) {
+        const groups = Array.isArray(entry?.groups) ? entry.groups : [];
+        return groups.map((group) => text(group, '')).filter(Boolean);
+    }
+
+    function getGroupIndexes() {
+        const selected = state.groupFilter;
+        return state.entries.reduce((indexes, entry, index) => {
+            const groups = entryGroups(entry);
+            if (selected === 'all' || (selected === '__ungrouped' && !groups.length) || groups.includes(selected)) {
+                indexes.push(index);
+            }
+            return indexes;
+        }, []);
+    }
+
+    function updateGroupOptions() {
+        const counts = new Map();
+        let ungrouped = 0;
+        state.entries.forEach((entry) => {
+            const groups = entryGroups(entry);
+            if (!groups.length) {
+                ungrouped += 1;
+            }
+            groups.forEach((group) => counts.set(group, (counts.get(group) || 0) + 1));
+        });
+        const options = [new Option(`全部分组 · ${state.entries.length}`, 'all')];
+        Array.from(counts.entries()).sort(([left], [right]) => left.localeCompare(right, 'zh-CN')).forEach(([group, count]) => {
+            options.push(new Option(`${group} · ${count}`, group));
+        });
+        if (ungrouped) {
+            options.push(new Option(`未分组 · ${ungrouped}`, '__ungrouped'));
+        }
+        dom.groupFilter.replaceChildren(...options);
+        dom.groupFilter.value = options.some((option) => option.value === state.groupFilter) ? state.groupFilter : 'all';
+        state.groupFilter = dom.groupFilter.value;
+    }
+
     function updateSummary() {
-        const total = state.entries.length;
-        const available = state.results.filter((result) => result?.status === 'ok').length;
-        const errors = state.results.filter((result) => result?.status === 'error').length;
+        const indexes = getGroupIndexes();
+        const total = indexes.length;
+        const available = indexes.filter((index) => state.results[index]?.status === 'ok').length;
+        const errors = indexes.filter((index) => state.results[index]?.status === 'error').length;
         const pending = Math.max(0, total - available - errors);
         dom.summaryTotal.textContent = String(total);
         dom.summaryAvailable.textContent = String(available);
@@ -191,8 +235,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateProgress() {
-        const total = state.entries.length;
-        const checked = state.results.filter(Boolean).length;
+        const indexes = getGroupIndexes();
+        const total = indexes.length;
+        const checked = indexes.filter((index) => state.results[index]).length;
         const percent = total ? Math.round((checked / total) * 100) : 0;
         const workers = Number(dom.checkWorkers.value);
         dom.progressLabel.textContent = `${checked} / ${total}`;
@@ -219,14 +264,18 @@ document.addEventListener('DOMContentLoaded', () => {
         dom.dashboard.classList.toggle('is-hidden', !hasEntries);
         dom.checkAllButton.disabled = !hasEntries || state.checking;
         dom.checkWorkers.disabled = !hasEntries || state.checking;
+        dom.groupFilter.disabled = !hasEntries || state.checking;
         dom.reportButton.classList.toggle('is-hidden', !hasEntries);
         dom.reportButton.disabled = !state.sourceUrl || state.checking;
         dom.reportButton.title = state.sourceUrl ? '下载当前地址的 HTML 探测报告' : '上传文件后无法生成远程地址报告';
         dom.downloadButton.disabled = !hasEntries || state.checking;
+        dom.checkAllButton.title = state.groupFilter === 'all' ? '按所选并发数检查所有条目' : '按所选并发数检查当前分组';
         if (state.checking) {
             setCheckButtonLabel('检查中…');
-        } else {
+        } else if (state.groupFilter === 'all') {
             setCheckButtonLabel('检查全部');
+        } else {
+            setCheckButtonLabel('检查本组');
         }
     }
 
@@ -395,6 +444,7 @@ document.addEventListener('DOMContentLoaded', () => {
         addChip(chips, entry.resolution);
         addChip(chips, entry.codecs);
         addChip(chips, entry.bandwidth ? `${formatNumber(entry.bandwidth)} bps` : '');
+        entryGroups(entry).forEach((group) => addChip(chips, group));
         addChip(chips, formatDuration(entry.duration));
 
         const resultPanel = document.createElement('div');
@@ -438,7 +488,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const entry = state.entries[index];
             const status = getStatus(index);
             const searchable = `${text(entry?.title, '')} ${text(entry?.url, '')}`.toLowerCase();
-            const matched = (!query || searchable.includes(query)) && (statusFilter === 'all' || status === statusFilter);
+            const groups = entryGroups(entry);
+            const groupMatched = state.groupFilter === 'all'
+                || (state.groupFilter === '__ungrouped' && !groups.length)
+                || groups.includes(state.groupFilter);
+            const matched = groupMatched && (!query || searchable.includes(query)) && (statusFilter === 'all' || status === statusFilter);
             card.classList.toggle('is-filtered', !matched);
             if (matched) {
                 visible += 1;
@@ -466,6 +520,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         state.entries.splice(index, 1);
         state.results.splice(index, 1);
+        updateGroupOptions();
         renderPlaylist();
         updateActionState();
         showToast('已从当前列表移除');
@@ -777,11 +832,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function checkAll() {
-        if (!state.entries.length || state.checking) {
+        const scopeIndexes = getGroupIndexes();
+        if (!scopeIndexes.length || state.checking) {
             return;
         }
         state.checking = true;
-        state.results = state.entries.map(() => null);
+        scopeIndexes.forEach((index) => {
+            state.results[index] = null;
+        });
         updateCards();
         const workers = Number(dom.checkWorkers.value);
         const mode = workers === 1 ? '顺序检查' : `${workers} 路并发检查`;
@@ -792,8 +850,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const token = state.requestToken;
         try {
             const batchSize = Math.max(1, workers * 2);
-            for (let start = 0; start < state.entries.length; start += batchSize) {
-                const batch = state.entries.slice(start, start + batchSize);
+            for (let start = 0; start < scopeIndexes.length; start += batchSize) {
+                const batchIndexes = scopeIndexes.slice(start, start + batchSize);
+                const batch = batchIndexes.map((index) => state.entries[index]);
                 const response = await fetchResponse('/check-all', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -807,17 +866,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!Array.isArray(data.results) || data.results.length !== batch.length) {
                     throw new Error('批量检查返回的结果数量不一致');
                 }
-                state.results.splice(start, batch.length, ...data.results);
+                batchIndexes.forEach((index, offset) => {
+                    state.results[index] = data.results[offset];
+                });
                 updateCards();
             }
-            const available = state.results.filter((result) => result?.status === 'ok').length;
-            showToast(`检查完成：${available} / ${state.entries.length} 条可用`, available ? 'success' : 'error');
+            const available = scopeIndexes.filter((index) => state.results[index]?.status === 'ok').length;
+            showToast(`检查完成：${available} / ${scopeIndexes.length} 条可用`, available ? 'success' : 'error');
         } catch (error) {
             if (error.name !== 'AbortError' && token === state.requestToken) {
-                state.results = state.entries.map(() => ({
-                    status: 'error',
-                    details: { error: error.message || '批量检查失败' },
-                }));
+                scopeIndexes.forEach((index) => {
+                    state.results[index] = {
+                        status: 'error',
+                        details: { error: error.message || '批量检查失败' },
+                    };
+                });
                 updateCards();
                 showToast(error.message || '批量检查失败', 'error');
             }
@@ -868,6 +931,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             state.entries = data.entries;
             state.results = data.entries.map(() => null);
+            state.groupFilter = 'all';
+            updateGroupOptions();
             dom.dashboard.classList.remove('is-hidden');
             dom.sourceMeta.textContent = url ? `已载入远程清单 · ${data.entries.length} 条` : `${file.name} · ${data.entries.length} 条`;
             dom.fileName.textContent = file ? file.name : '选择本地文件';
@@ -910,6 +975,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     dom.playlistSearch.addEventListener('input', applyFilters);
     dom.statusFilter.addEventListener('change', applyFilters);
+    dom.groupFilter.addEventListener('change', () => {
+        state.groupFilter = dom.groupFilter.value;
+        applyFilters();
+        updateSummary();
+        updateProgress();
+        updateActionState();
+    });
     dom.checkAllButton.addEventListener('click', checkAll);
     dom.reportButton.addEventListener('click', downloadReport);
     dom.downloadButton.addEventListener('click', downloadPlaylist);

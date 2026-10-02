@@ -4,6 +4,7 @@ import ipaddress
 import json
 import os
 import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -12,6 +13,7 @@ from urllib.parse import urljoin, urlparse
 
 import m3u8
 import requests
+from m3u8.parser import ATTRIBUTELISTPATTERN
 
 
 DEFAULT_TIMEOUT = 10
@@ -457,6 +459,18 @@ def parse_m3u(content, base_url=None):
         for index, variant in enumerate(playlist.playlists, start=1):
             resolution = variant.stream_info.resolution
             resolution_text = f"{resolution[0]}x{resolution[1]}" if resolution else "未知分辨率"
+            groups = []
+            for group in (
+                variant.stream_info.audio,
+                variant.stream_info.video,
+                variant.stream_info.subtitles,
+                variant.stream_info.closed_captions,
+            ):
+                if group and group.upper() != "NONE" and group not in groups:
+                    groups.append(group)
+            for media in variant.media:
+                if media.group_id and media.group_id not in groups:
+                    groups.append(media.group_id)
             entries.append(
                 {
                     "duration": "-1",
@@ -465,6 +479,7 @@ def parse_m3u(content, base_url=None):
                     "resolution": resolution_text,
                     "bandwidth": variant.stream_info.bandwidth,
                     "codecs": variant.stream_info.codecs or "",
+                    "groups": groups,
                 }
             )
         return entries
@@ -476,8 +491,22 @@ def parse_m3u(content, base_url=None):
         if not line:
             continue
         if line.startswith("#EXTINF:"):
-            info = line[8:].split(",", 1)
-            current_entry = {"duration": info[0], "title": info[1] if len(info) > 1 else "", "url": ""}
+            parts = ATTRIBUTELISTPATTERN.split(line[8:])[1::2]
+            metadata = parts[0] if parts else ""
+            tokens = shlex.split(metadata)
+            duration = tokens.pop(0) if tokens else ""
+            attributes = {}
+            for token in tokens:
+                if "=" in token:
+                    key, value = token.split("=", 1)
+                    attributes[key.lower()] = value
+            group = attributes.get("group-title", "")
+            current_entry = {
+                "duration": duration,
+                "title": ",".join(parts[1:]),
+                "url": "",
+                "groups": [group] if group else [],
+            }
         elif not line.startswith("#") and current_entry is not None:
             current_entry["url"] = line
             entries.append(current_entry)

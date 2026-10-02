@@ -21,6 +21,7 @@ class FrontendTests(unittest.TestCase):
             "summaryPending",
             "playlistSearch",
             "statusFilter",
+            "groupFilter",
             "progressPanel",
             "emptyState",
             "toastContainer",
@@ -42,6 +43,16 @@ class FrontendTests(unittest.TestCase):
         self.assertIn("fetchResponse('/thumbnail'", script)
         self.assertIn("body: JSON.stringify({ entries: batch, workers })", script)
 
+    def test_script_supports_group_filtering_and_scoped_checks(self):
+        page = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="groupFilter"', page)
+        self.assertIn("entryGroups", script)
+        self.assertIn("getGroupIndexes", script)
+        self.assertIn("state.groupFilter", script)
+        self.assertIn("const scopeIndexes = getGroupIndexes();", script)
+
     def test_script_renders_on_demand_thumbnail(self):
         script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")
         styles = (ROOT / "static" / "css" / "style.css").read_text(encoding="utf-8")
@@ -54,9 +65,9 @@ class FrontendTests(unittest.TestCase):
         script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")
 
         self.assertIn("const batchSize = Math.max(1, workers * 2);", script)
-        self.assertIn("for (let start = 0; start < state.entries.length; start += batchSize)", script)
-        self.assertIn("const batch = state.entries.slice(start, start + batchSize);", script)
-        self.assertIn("state.results.splice(start, batch.length", script)
+        self.assertIn("for (let start = 0; start < scopeIndexes.length; start += batchSize)", script)
+        self.assertIn("const batch = batchIndexes.map((index) => state.entries[index]);", script)
+        self.assertIn("state.results[index] = data.results[offset];", script)
         self.assertIn("连接失败", script)
 
     def test_script_cleans_stale_results_and_blob_urls(self):

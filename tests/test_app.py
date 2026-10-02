@@ -3,7 +3,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from app import app
+from app import app, generate_m3u
 
 
 class AppPlaylistHandler(BaseHTTPRequestHandler):
@@ -59,6 +59,13 @@ class AppTests(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(data["entries"][0]["resolution"], "1280x720")
         self.assertTrue(data["entries"][0]["url"].endswith("/video/index.m3u8"))
+
+    def test_generate_m3u_preserves_group_title(self):
+        content = generate_m3u(
+            [{"duration": "-1", "title": "频道一", "url": "https://example.test/one.m3u8", "groups": ["新闻"]}]
+        )
+
+        self.assertIn('#EXTINF:-1 group-title="新闻",频道一', content)
 
     def test_parse_remote_failure_is_written_to_application_log(self):
         missing_url = self.url.replace("/master.m3u8", "/missing.m3u8")

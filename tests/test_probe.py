@@ -54,7 +54,9 @@ class ProbeTests(unittest.TestCase):
         content = "\n".join(
             [
                 "#EXTM3U",
-                '#EXT-X-STREAM-INF:BANDWIDTH=2200000,RESOLUTION=1280x720,CODECS="avc1.64001f,mp4a.40.2"',
+                '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio-main",NAME="主音轨",URI="audio/index.m3u8"',
+                '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subtitle-main",NAME="中文字幕",URI="sub/index.m3u8"',
+                '#EXT-X-STREAM-INF:BANDWIDTH=2200000,RESOLUTION=1280x720,CODECS="avc1.64001f,mp4a.40.2",AUDIO="audio-main",SUBTITLES="subtitle-main"',
                 "video/720/index.m3u8",
             ]
         )
@@ -64,6 +66,20 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["url"], "https://cdn.example/video/720/index.m3u8")
         self.assertEqual(entries[0]["resolution"], "1280x720")
+        self.assertEqual(entries[0]["groups"], ["audio-main", "subtitle-main"])
+
+    def test_parse_m3u_keeps_iptv_group_title(self):
+        content = "\n".join(
+            [
+                "#EXTM3U",
+                '#EXTINF:-1 tvg-id="news" group-title="新闻,综合",频道一',
+                "https://cdn.example/news/index.m3u8",
+            ]
+        )
+
+        entries = parse_m3u(content)
+
+        self.assertEqual(entries[0]["groups"], ["新闻,综合"])
 
     def test_manifest_probe_follows_variant_and_checks_segment(self):
         PlaylistHandler.routes = {

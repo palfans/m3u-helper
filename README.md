@@ -96,11 +96,13 @@ Python 回退可以判断清单和片段是否可用；当清单缺少 `RESOLUTI
 
 ## HTTP 接口
 
-- `POST /parse`：读取 M3U/M3U8 URL 或上传文件，返回播放列表条目。
+- `POST /parse`：读取 M3U/M3U8 URL 或上传文件，返回播放列表条目；条目中的 `groups` 保留 IPTV `group-title` 和 HLS `GROUP-ID`。
 - `POST /video-info`：提交 `{ "url": "https://..." }`，返回 JSON 探测结果。
 - `POST /thumbnail`：提交 `{ "url": "https://..." }`，按需返回视频首帧 JPEG；截取失败不会影响可用性判定。
 - `POST /check-all`：提交 `{ "entries": [{ "title": "...", "url": "https://..." }], "workers": 1 }`，`workers` 支持 `1`、`2`、`3`、`5`，页面通过并发选择器提交；页面会按所选并发数分批提交，省略时使用服务端默认值。
 - `POST /report`：提交 `{ "url": "https://..." }`，返回可下载的 HTML 报告；可用视频会尝试嵌入首帧截图。
+
+页面载入清单后可以按分组筛选；检查按钮只处理当前选中的分组，选择“全部分组”时处理全部条目。
 
 ## 开发说明
 
