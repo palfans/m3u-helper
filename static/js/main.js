@@ -11,7 +11,6 @@ document.addEventListener('DOMContentLoaded', () => {
         sourceMeta: get('sourceMeta'),
         dashboard: get('dashboard'),
         playlist: get('playlist'),
-        playlistSubtitle: get('playlistSubtitle'),
         playlistSearch: get('playlistSearch'),
         statusFilter: get('statusFilter'),
         visibleCount: get('visibleCount'),
@@ -57,12 +56,14 @@ document.addEventListener('DOMContentLoaded', () => {
         error: '不可用',
     };
 
-    const sortable = window.Sortable ? new window.Sortable(dom.playlist, {
-        animation: 180,
-        handle: '.drag-handle',
-        ghostClass: 'sortable-ghost',
-        onEnd: syncCurrentOrder,
-    }) : null;
+    if (window.Sortable) {
+        new window.Sortable(dom.playlist, {
+            animation: 180,
+            handle: '.drag-handle',
+            ghostClass: 'sortable-ghost',
+            onEnd: syncCurrentOrder,
+        });
+    }
 
     function text(value, fallback = '未知') {
         if (value === null || value === undefined || value === '') {
@@ -197,16 +198,16 @@ document.addEventListener('DOMContentLoaded', () => {
         dom.progressPanel.classList.toggle('is-running', state.checking);
         if (state.checking) {
             dom.progressTitle.textContent = '正在顺序检查';
-            dom.currentChecking.textContent = `服务端将按列表顺序检查 ${total} 条地址，请保持页面打开。`;
+            dom.currentChecking.textContent = `顺序检查中 · ${total} 条`;
         } else if (total && checked === total) {
             dom.progressTitle.textContent = '检查完成';
-            dom.currentChecking.textContent = '所有条目已经完成探测，可以使用筛选快速定位结果。';
+            dom.currentChecking.textContent = '全部完成';
         } else if (checked) {
             dom.progressTitle.textContent = '检查未完成';
-            dom.currentChecking.textContent = `已完成 ${checked} 条，仍有 ${total - checked} 条等待检查。`;
+            dom.currentChecking.textContent = `已完成 ${checked} 条`;
         } else {
             dom.progressTitle.textContent = '准备检查';
-            dom.currentChecking.textContent = '点击“检查全部”开始按顺序探测。';
+            dom.currentChecking.textContent = '点击检查全部开始';
         }
     }
 
@@ -299,7 +300,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!result) {
             const message = document.createElement('p');
             message.className = 'result-hint';
-            message.textContent = '等待检查。你可以先调整列表顺序。';
+            message.textContent = '等待检查';
             resultPanel.appendChild(message);
             return;
         }
@@ -798,7 +799,6 @@ document.addEventListener('DOMContentLoaded', () => {
             state.entries = data.entries;
             state.results = data.entries.map(() => null);
             dom.dashboard.classList.remove('is-hidden');
-            dom.playlistSubtitle.textContent = `${data.entries.length} 条地址 · ${sortable ? '拖动项目可以调整顺序' : '当前环境未加载排序组件'}`;
             dom.sourceMeta.textContent = url ? `已载入远程清单 · ${data.entries.length} 条` : `${file.name} · ${data.entries.length} 条`;
             dom.fileName.textContent = file ? file.name : '选择本地文件';
             setSourceState('已载入', 'loaded');

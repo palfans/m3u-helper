@@ -57,6 +57,21 @@ class FrontendTests(unittest.TestCase):
         self.assertIn("state.reportController?.abort();", script)
         self.assertIn("state.downloadController?.abort();", script)
 
+    def test_page_keeps_secondary_copy_in_hover_text(self):
+        page = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+
+        for removed_copy in (
+            "PLAYLIST INSPECTOR",
+            "默认单线程，按列表顺序执行",
+            "已确认可播放",
+            "需要进一步处理",
+            "等待顺序探测",
+            "清晰检查每一个播放地址",
+        ):
+            self.assertNotIn(removed_copy, page)
+        self.assertIn('title="按列表顺序检查所有条目"', page)
+        self.assertIn('title="当前播放列表的总条目数"', page)
+
 
 if __name__ == "__main__":
     unittest.main()
