@@ -9,6 +9,7 @@ from probe import (
     probe_m3u8,
     ProbeError,
     render_html_report,
+    fetch_m3u_content,
     validate_url,
     validate_ffmpeg_result,
 )
@@ -18,6 +19,11 @@ class PlaylistHandler(BaseHTTPRequestHandler):
     routes = {}
 
     def do_GET(self):
+        if self.path == "/redirect.m3u8":
+            self.send_response(302)
+            self.send_header("Location", "/master.m3u8")
+            self.end_headers()
+            return
         body, status, content_type = self.routes.get(self.path, (b"", 404, "text/plain"))
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -80,6 +86,20 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(result["video"][0]["resolution"], "1280x720")
         self.assertEqual(result["audio"][0]["codec"], "mp4a.40.2")
         self.assertEqual(result["playlist"]["segment_bytes"], 32)
+
+    def test_manifest_fetch_follows_redirect(self):
+        PlaylistHandler.routes = {
+            "/master.m3u8": (b"#EXTM3U\n", 200, "application/vnd.apple.mpegurl"),
+        }
+
+        content, final_url = fetch_m3u_content(
+            f"{self.base_url}/redirect.m3u8",
+            timeout=2,
+            allow_private=True,
+        )
+
+        self.assertEqual(content, "#EXTM3U\n")
+        self.assertEqual(final_url, f"{self.base_url}/master.m3u8")
 
     def test_manifest_probe_reports_failed_segment(self):
         PlaylistHandler.routes = {

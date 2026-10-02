@@ -151,7 +151,7 @@ def check_all():
         return jsonify({'error': '请求体必须是 JSON 对象'}), 400
     entries = payload.get('entries', [])
     if not isinstance(entries, list) or not entries:
-        return jsonify({'error': '没有需要检查的视频'})
+        return jsonify({'error': '没有需要检查的视频'}), 400
     
     try:
         with ThreadPoolExecutor(max_workers=5) as executor:
@@ -173,7 +173,7 @@ def download():
             return jsonify({'error': '请求体必须是 JSON 对象'}), 400
         entries = payload.get('entries', [])
         if not isinstance(entries, list) or not entries:
-            return jsonify({'error': '没有可下载的内容'})
+            return jsonify({'error': '没有可下载的内容'}), 400
             
         content = generate_m3u(entries)
         

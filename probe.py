@@ -374,17 +374,28 @@ def probe_url(url, timeout=DEFAULT_TIMEOUT, allow_private=False):
     validate_url(url, allow_private=allow_private)
     errors = []
     ffprobe = shutil.which("ffprobe")
-    if ffprobe:
-        try:
-            return probe_with_ffprobe(url, timeout, ffprobe)
-        except (ProbeError, OSError) as exc:
-            errors.append(f"ffprobe: {exc}")
     ffmpeg = shutil.which("ffmpeg")
-    if ffmpeg:
+    tool_url = url
+    if ffprobe or ffmpeg:
         try:
-            return probe_with_ffmpeg(url, timeout, ffmpeg)
-        except (ProbeError, OSError) as exc:
-            errors.append(f"ffmpeg: {exc}")
+            _, tool_url = _fetch(url, timeout, 1, allow_private)
+        except ProbeError as exc:
+            errors.append(f"URL 预检: {exc}")
+        else:
+            if ffprobe:
+                try:
+                    result = probe_with_ffprobe(tool_url, timeout, ffprobe)
+                    result["url"] = url
+                    return result
+                except (ProbeError, OSError) as exc:
+                    errors.append(f"ffprobe: {exc}")
+            if ffmpeg:
+                try:
+                    result = probe_with_ffmpeg(tool_url, timeout, ffmpeg)
+                    result["url"] = url
+                    return result
+                except (ProbeError, OSError) as exc:
+                    errors.append(f"ffmpeg: {exc}")
     result = probe_m3u8(url, timeout, allow_private=allow_private)
     if not result["available"] and errors:
         result["error"] = "; ".join(errors + [result["error"]])
