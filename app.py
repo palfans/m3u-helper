@@ -1,11 +1,10 @@
 import os
 from flask import Flask, Response, jsonify, render_template, request, send_file
-import requests
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 
 from probe import parse_m3u as parse_playlist
-from probe import probe_url, render_html_report, validate_url
+from probe import ProbeError, fetch_m3u_content, probe_url, render_html_report, validate_url
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.urandom(24)
@@ -25,9 +24,11 @@ def is_valid_url(url):
     return True
 
 def download_m3u_content(url):
-    response = requests.get(url, timeout=10)
-    response.raise_for_status()
-    return response.content.decode("utf-8-sig")
+    return fetch_m3u_content(
+        url,
+        timeout=app.config['PROBE_TIMEOUT'],
+        allow_private=app.config['ALLOW_PRIVATE_URLS'],
+    )
 
 
 def parse_m3u(content, base_url=None):
@@ -49,6 +50,13 @@ def get_video_info(url):
     )
 
 def check_video_status(entry):
+    if not isinstance(entry, dict):
+        return {
+            'title': '',
+            'url': '',
+            'status': 'error',
+            'details': {'error': '列表项必须是 JSON 对象'},
+        }
     url = entry.get('url', '')
     try:
         info = get_video_info(url)
@@ -86,11 +94,11 @@ def parse():
             return jsonify({'error': '无效的URL格式'})
         
         try:
-            content = download_m3u_content(url)
-            entries = parse_m3u(content, url)
+            content, final_url = download_m3u_content(url)
+            entries = parse_m3u(content, final_url)
             return jsonify({'entries': entries})
-        except (requests.RequestException, UnicodeError, ValueError) as e:
-            return jsonify({'error': str(e)})
+        except (ProbeError, UnicodeError, ValueError) as e:
+            return jsonify({'error': str(e)}), 400
             
     elif 'file' in request.files:
         file = request.files['file']
@@ -111,8 +119,8 @@ def parse():
 @app.route('/video-info', methods=['POST'])
 def video_info():
     payload = request.get_json(silent=True)
-    if payload is None:
-        return jsonify({'error': '请求体必须是 JSON'}), 400
+    if not isinstance(payload, dict):
+        return jsonify({'error': '请求体必须是 JSON 对象'}), 400
     url = payload.get('url')
     if not url:
         return jsonify({'error': 'No URL provided'})
@@ -124,7 +132,9 @@ def video_info():
 
 @app.route('/report', methods=['POST'])
 def report():
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({'error': '请求体必须是 JSON 对象'}), 400
     url = payload.get('url')
     if not is_valid_url(url):
         return jsonify({'error': '只支持 HTTP 或 HTTPS URL'}), 400
@@ -136,9 +146,11 @@ def report():
 @app.route('/check-all', methods=['POST'])
 def check_all():
     """批量检查所有视频的状态"""
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({'error': '请求体必须是 JSON 对象'}), 400
     entries = payload.get('entries', [])
-    if not entries:
+    if not isinstance(entries, list) or not entries:
         return jsonify({'error': '没有需要检查的视频'})
     
     try:
@@ -156,9 +168,11 @@ def check_all():
 def download():
     """下载生成的M3U文件"""
     try:
-        payload = request.get_json(silent=True) or {}
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({'error': '请求体必须是 JSON 对象'}), 400
         entries = payload.get('entries', [])
-        if not entries:
+        if not isinstance(entries, list) or not entries:
             return jsonify({'error': '没有可下载的内容'})
             
         content = generate_m3u(entries)

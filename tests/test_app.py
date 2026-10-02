@@ -84,6 +84,13 @@ class AppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("JSON", response.get_json()["error"])
 
+    def test_json_endpoints_reject_non_object_bodies(self):
+        for path in ("/video-info", "/report", "/check-all", "/download"):
+            with self.subTest(path=path):
+                response = self.client.post(path, json=[])
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("对象", response.get_json()["error"])
+
     def test_upload_rejects_invalid_encoding(self):
         response = self.client.post(
             "/parse",

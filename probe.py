@@ -7,7 +7,7 @@ import shutil
 import socket
 import subprocess
 from datetime import datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import m3u8
 import requests
@@ -17,6 +17,7 @@ DEFAULT_TIMEOUT = 10
 MAX_MANIFEST_BYTES = 2 * 1024 * 1024
 MAX_SEGMENT_BYTES = 64 * 1024
 MAX_VARIANT_DEPTH = 5
+MAX_REDIRECTS = 5
 USER_AGENT = "m3u-helper/1.0"
 
 
@@ -228,20 +229,37 @@ def _read_response(response, max_bytes):
 
 
 def _fetch(url, timeout, max_bytes, allow_private=False):
-    validate_url(url, allow_private=allow_private)
+    current_url = url
+    for _ in range(MAX_REDIRECTS + 1):
+        validate_url(current_url, allow_private=allow_private)
+        try:
+            with requests.get(
+                current_url,
+                headers={"User-Agent": USER_AGENT},
+                allow_redirects=False,
+                stream=True,
+                timeout=timeout,
+            ) as response:
+                if response.is_redirect:
+                    location = response.headers.get("Location")
+                    if not location:
+                        raise ProbeError("重定向响应缺少目标地址")
+                    current_url = urljoin(current_url, location)
+                    continue
+                response.raise_for_status()
+                validate_url(response.url, allow_private=allow_private)
+                return _read_response(response, max_bytes), response.url
+        except requests.RequestException as exc:
+            raise ProbeError(f"请求失败: {exc}") from exc
+    raise ProbeError(f"重定向次数超过 {MAX_REDIRECTS} 次")
+
+
+def fetch_m3u_content(url, timeout=DEFAULT_TIMEOUT, allow_private=False):
+    content, final_url = _fetch(url, timeout, MAX_MANIFEST_BYTES, allow_private)
     try:
-        with requests.get(
-            url,
-            headers={"User-Agent": USER_AGENT},
-            allow_redirects=True,
-            stream=True,
-            timeout=timeout,
-        ) as response:
-            response.raise_for_status()
-            validate_url(response.url, allow_private=allow_private)
-            return _read_response(response, max_bytes), response.url
-    except requests.RequestException as exc:
-        raise ProbeError(f"请求失败: {exc}") from exc
+        return content.decode("utf-8-sig"), final_url
+    except UnicodeDecodeError as exc:
+        raise ProbeError("M3U 文件编码必须为 UTF-8") from exc
 
 
 def _codec_parts(codecs):
