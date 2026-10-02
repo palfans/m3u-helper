@@ -30,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
         summaryPending: get('summaryPending'),
         checkWorkers: get('checkWorkers'),
         checkAllButton: get('checkAllBtn'),
+        stopCheckButton: get('stopCheckBtn'),
         reportButton: get('reportBtn'),
         downloadButton: get('downloadBtn'),
         videoInfoModal: get('videoInfoModal'),
@@ -47,6 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
         checkScope: null,
         sourceUrl: '',
         checking: false,
+        stopRequested: false,
         requestToken: 0,
         parseController: null,
         checkController: null,
@@ -146,6 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.checkScope = null;
         state.sourceUrl = '';
         state.checking = false;
+        state.stopRequested = false;
         clearDownloadUrls();
         dom.playlist.replaceChildren();
         dom.dashboard.classList.add('is-hidden');
@@ -287,6 +290,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const hasEntries = state.entries.length > 0;
         dom.dashboard.classList.toggle('is-hidden', !hasEntries);
         dom.checkAllButton.disabled = !hasEntries || state.checking;
+        dom.stopCheckButton.classList.toggle('is-hidden', !state.checking);
+        dom.stopCheckButton.disabled = !state.checking || state.stopRequested;
+        dom.stopCheckButton.textContent = state.stopRequested ? '正在停止…' : '停止检查';
         dom.checkWorkers.disabled = !hasEntries || state.checking;
         dom.groupFilter.disabled = !hasEntries || state.checking;
         dom.checkSelectedButton.disabled = state.selected.size === 0 || state.checking;
@@ -900,6 +906,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         state.checkScope = [...scopeIndexes];
         state.checking = true;
+        state.stopRequested = false;
         scopeIndexes.forEach((index) => {
             state.results[index] = null;
         });
@@ -952,12 +959,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 state.checkController = null;
             }
             if (token === state.requestToken) {
+                const stopped = state.stopRequested;
+                state.stopRequested = false;
                 state.checking = false;
                 updateCards();
-                setConnection('准备就绪');
-                setSourceState('已载入', 'loaded');
+                if (stopped) {
+                    dom.progressTitle.textContent = '检查已停止';
+                    dom.currentChecking.textContent = '已停止，已保留已完成结果';
+                    setConnection('检查已停止');
+                    setSourceState('已停止', 'loaded');
+                } else {
+                    setConnection('准备就绪');
+                    setSourceState('已载入', 'loaded');
+                }
             }
         }
+    }
+
+    function stopCheck() {
+        if (!state.checking) {
+            return;
+        }
+        state.stopRequested = true;
+        state.checkController?.abort();
+        updateActionState();
     }
 
     async function checkAll() {
@@ -1058,6 +1083,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     dom.checkAllButton.addEventListener('click', checkAll);
     dom.checkSelectedButton.addEventListener('click', checkSelected);
+    dom.stopCheckButton.addEventListener('click', stopCheck);
     dom.reportButton.addEventListener('click', downloadReport);
     dom.downloadButton.addEventListener('click', downloadPlaylist);
     dom.closeModalButton.addEventListener('click', () => dom.videoInfoModal.close());

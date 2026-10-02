@@ -24,6 +24,7 @@ class FrontendTests(unittest.TestCase):
             "groupFilter",
             "selectedCount",
             "checkSelectedBtn",
+            "stopCheckBtn",
             "progressPanel",
             "emptyState",
             "toastContainer",
@@ -65,6 +66,17 @@ class FrontendTests(unittest.TestCase):
         self.assertIn("state.selected", script)
         self.assertIn("const scopeIndexes = Array.from(state.selected)", script)
         self.assertIn("checkSelected", script)
+
+    def test_script_supports_stopping_checks(self):
+        page = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "static" / "js" / "main.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="stopCheckBtn"', page)
+        self.assertIn("stopCheckButton: get('stopCheckBtn')", script)
+        self.assertIn("state.stopRequested", script)
+        self.assertIn("state.checkController?.abort();", script)
+        self.assertIn("function stopCheck()", script)
+        self.assertIn("dom.stopCheckButton.addEventListener('click', stopCheck);", script)
 
     def test_styles_increase_reading_sizes(self):
         styles = (ROOT / "static" / "css" / "style.css").read_text(encoding="utf-8")

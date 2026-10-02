@@ -324,6 +324,17 @@ h2 {
     background: #d8fb8b;
 }
 
+.button-stop {
+    border-color: rgba(199, 71, 94, 0.36);
+    color: var(--red);
+    background: rgba(199, 71, 94, 0.06);
+}
+
+.button-stop:hover:not(:disabled) {
+    border-color: rgba(199, 71, 94, 0.6);
+    background: rgba(199, 71, 94, 0.12);
+}
+
 .button-quiet {
     border-color: var(--line-strong);
     color: var(--muted);
