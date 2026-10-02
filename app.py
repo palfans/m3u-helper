@@ -91,7 +91,7 @@ def parse():
     if 'url' in request.form:
         url = request.form['url']
         if not is_valid_url(url):
-            return jsonify({'error': '无效的URL格式'})
+            return jsonify({'error': '无效的URL格式'}), 400
         
         try:
             content, final_url = download_m3u_content(url)
@@ -114,7 +114,7 @@ def parse():
             return jsonify({'error': str(e)}), 400
         return jsonify({'entries': entries})
             
-    return jsonify({'error': 'Invalid request'})
+    return jsonify({'error': 'Invalid request'}), 400
 
 @app.route('/video-info', methods=['POST'])
 def video_info():
@@ -123,7 +123,7 @@ def video_info():
         return jsonify({'error': '请求体必须是 JSON 对象'}), 400
     url = payload.get('url')
     if not url:
-        return jsonify({'error': 'No URL provided'})
+        return jsonify({'error': 'No URL provided'}), 400
         
     if not is_valid_url(url):
         return jsonify({'error': '只支持 HTTP 或 HTTPS URL'}), 400

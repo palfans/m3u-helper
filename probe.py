@@ -26,6 +26,8 @@ class ProbeError(Exception):
 
 
 def validate_url(url, allow_private=False):
+    if not isinstance(url, str):
+        raise ValueError("URL 必须是字符串")
     parsed = urlparse(url or "")
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError("只支持 HTTP 或 HTTPS URL")

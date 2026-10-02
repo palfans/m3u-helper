@@ -84,6 +84,16 @@ class AppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("JSON", response.get_json()["error"])
 
+    def test_input_errors_return_bad_request(self):
+        response = self.client.post("/video-info", json={"url": 123})
+        self.assertEqual(response.status_code, 400)
+
+        response = self.client.post("/video-info", json={})
+        self.assertEqual(response.status_code, 400)
+
+        response = self.client.post("/parse", data={"url": "ftp://example.test/list.m3u8"})
+        self.assertEqual(response.status_code, 400)
+
     def test_json_endpoints_reject_non_object_bodies(self):
         for path in ("/video-info", "/report", "/check-all", "/download"):
             with self.subTest(path=path):
