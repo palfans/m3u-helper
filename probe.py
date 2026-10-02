@@ -1,8 +1,10 @@
 import html
+import ipaddress
 import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 from datetime import datetime, timezone
 from urllib.parse import urlparse
@@ -22,11 +24,33 @@ class ProbeError(Exception):
     pass
 
 
-def validate_url(url):
+def validate_url(url, allow_private=False):
     parsed = urlparse(url or "")
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError("只支持 HTTP 或 HTTPS URL")
+    hostname = (parsed.hostname or "").lower()
+    if not allow_private and hostname in {"localhost", "localhost.localdomain"}:
+        raise ValueError("出于安全原因不允许访问本机地址")
+    if not allow_private and _host_is_private(hostname):
+        raise ValueError("出于安全原因不允许访问内网地址")
     return url
+
+
+def _host_is_private(hostname):
+    try:
+        addresses = [ipaddress.ip_address(hostname)]
+    except ValueError:
+        try:
+            addresses = [
+                ipaddress.ip_address(item[4][0])
+                for item in socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+            ]
+        except socket.gaierror:
+            return False
+    return any(
+        address.is_private or address.is_loopback or address.is_link_local or address.is_reserved or address.is_multicast
+        for address in addresses
+    )
 
 
 def _empty_result(url, method, error):
@@ -151,6 +175,13 @@ def parse_ffmpeg_output(stderr):
     return {"video": video, "audio": audio}
 
 
+def validate_ffmpeg_result(stderr, returncode):
+    if returncode != 0:
+        detail = str(stderr or "ffmpeg 未返回有效结果").strip()
+        raise ProbeError(detail[-1000:])
+    return parse_ffmpeg_output(stderr)
+
+
 def probe_with_ffmpeg(url, timeout=DEFAULT_TIMEOUT, executable=None):
     executable = executable or shutil.which("ffmpeg")
     if not executable:
@@ -167,10 +198,9 @@ def probe_with_ffmpeg(url, timeout=DEFAULT_TIMEOUT, executable=None):
             check=False,
             env=environment,
         )
-        stderr = completed.stderr
+        streams = validate_ffmpeg_result(completed.stderr, completed.returncode)
     except subprocess.TimeoutExpired as exc:
-        stderr = exc.stderr or ""
-    streams = parse_ffmpeg_output(stderr)
+        raise ProbeError("ffmpeg 探测超时") from exc
     return {
         "url": url,
         "available": True,
@@ -197,7 +227,8 @@ def _read_response(response, max_bytes):
     return b"".join(chunks)
 
 
-def _fetch(url, timeout, max_bytes):
+def _fetch(url, timeout, max_bytes, allow_private=False):
+    validate_url(url, allow_private=allow_private)
     try:
         with requests.get(
             url,
@@ -207,6 +238,7 @@ def _fetch(url, timeout, max_bytes):
             timeout=timeout,
         ) as response:
             response.raise_for_status()
+            validate_url(response.url, allow_private=allow_private)
             return _read_response(response, max_bytes), response.url
     except requests.RequestException as exc:
         raise ProbeError(f"请求失败: {exc}") from exc
@@ -266,10 +298,10 @@ def _variant_video_audio(playlist):
     return video, unique_audio
 
 
-def probe_m3u8(url, timeout=DEFAULT_TIMEOUT):
-    validate_url(url)
+def probe_m3u8(url, timeout=DEFAULT_TIMEOUT, allow_private=False):
+    validate_url(url, allow_private=allow_private)
     try:
-        content, final_url = _fetch(url, timeout, MAX_MANIFEST_BYTES)
+        content, final_url = _fetch(url, timeout, MAX_MANIFEST_BYTES, allow_private)
         if not content.lstrip().startswith(b"#EXTM3U"):
             raise ProbeError("响应内容不是 M3U8 播放列表")
         root = m3u8.loads(content.decode("utf-8-sig", errors="replace"), uri=final_url)
@@ -283,7 +315,7 @@ def probe_m3u8(url, timeout=DEFAULT_TIMEOUT):
                 raise ProbeError(f"子播放列表嵌套超过 {MAX_VARIANT_DEPTH} 层")
             selected = max(current.playlists, key=lambda item: item.stream_info.bandwidth or 0)
             child_url = selected.absolute_uri
-            child_content, child_final_url = _fetch(child_url, timeout, MAX_MANIFEST_BYTES)
+            child_content, child_final_url = _fetch(child_url, timeout, MAX_MANIFEST_BYTES, allow_private)
             current = m3u8.loads(child_content.decode("utf-8-sig", errors="replace"), uri=child_final_url)
             current_url = child_final_url
             depth += 1
@@ -292,7 +324,7 @@ def probe_m3u8(url, timeout=DEFAULT_TIMEOUT):
         segment = current.segments[-1]
         segment_url = segment.absolute_uri
         try:
-            segment_content, _ = _fetch(segment_url, timeout, MAX_SEGMENT_BYTES)
+            segment_content, _ = _fetch(segment_url, timeout, MAX_SEGMENT_BYTES, allow_private)
         except ProbeError as exc:
             raise ProbeError(f"媒体片段检查失败: {exc}") from exc
         if not segment_content:
@@ -320,8 +352,8 @@ def probe_m3u8(url, timeout=DEFAULT_TIMEOUT):
         return _empty_result(url, "m3u8", exc)
 
 
-def probe_url(url, timeout=DEFAULT_TIMEOUT):
-    validate_url(url)
+def probe_url(url, timeout=DEFAULT_TIMEOUT, allow_private=False):
+    validate_url(url, allow_private=allow_private)
     errors = []
     ffprobe = shutil.which("ffprobe")
     if ffprobe:
@@ -329,14 +361,13 @@ def probe_url(url, timeout=DEFAULT_TIMEOUT):
             return probe_with_ffprobe(url, timeout, ffprobe)
         except (ProbeError, OSError) as exc:
             errors.append(f"ffprobe: {exc}")
-    else:
-        ffmpeg = shutil.which("ffmpeg")
-        if ffmpeg:
-            try:
-                return probe_with_ffmpeg(url, timeout, ffmpeg)
-            except (ProbeError, OSError) as exc:
-                errors.append(f"ffmpeg: {exc}")
-    result = probe_m3u8(url, timeout)
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg:
+        try:
+            return probe_with_ffmpeg(url, timeout, ffmpeg)
+        except (ProbeError, OSError) as exc:
+            errors.append(f"ffmpeg: {exc}")
+    result = probe_m3u8(url, timeout, allow_private=allow_private)
     if not result["available"] and errors:
         result["error"] = "; ".join(errors + [result["error"]])
     return result

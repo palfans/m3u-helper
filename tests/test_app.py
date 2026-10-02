@@ -1,3 +1,4 @@
+import io
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -46,6 +47,8 @@ class AppTests(unittest.TestCase):
         cls.server.server_close()
 
     def setUp(self):
+        app.config["ALLOW_PRIVATE_URLS"] = True
+        app.config["PROBE_TIMEOUT"] = 1
         self.client = app.test_client()
 
     def test_parse_master_m3u8_returns_variant_entry(self):
@@ -74,6 +77,22 @@ class AppTests(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(data["total"], 1)
         self.assertEqual(data["results"][0]["status"], "error")
+
+    def test_video_info_rejects_missing_json_body(self):
+        response = self.client.post("/video-info", data="bad", content_type="text/plain")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("JSON", response.get_json()["error"])
+
+    def test_upload_rejects_invalid_encoding(self):
+        response = self.client.post(
+            "/parse",
+            data={"file": (io.BytesIO(bytes([0xFF])), "playlist.m3u8")},
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("编码", response.get_json()["error"])
 
 
 if __name__ == "__main__":

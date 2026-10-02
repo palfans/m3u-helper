@@ -1,9 +1,17 @@
-import json
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from probe import normalize_ffprobe, parse_ffmpeg_output, parse_m3u, probe_m3u8, render_html_report
+from probe import (
+    normalize_ffprobe,
+    parse_ffmpeg_output,
+    parse_m3u,
+    probe_m3u8,
+    ProbeError,
+    render_html_report,
+    validate_url,
+    validate_ffmpeg_result,
+)
 
 
 class PlaylistHandler(BaseHTTPRequestHandler):
@@ -65,7 +73,7 @@ class ProbeTests(unittest.TestCase):
             "/video/segment.ts": (b"\x47" + b"x" * 31, 200, "video/mp2t"),
         }
 
-        result = probe_m3u8(f"{self.base_url}/master.m3u8", timeout=2)
+        result = probe_m3u8(f"{self.base_url}/master.m3u8", timeout=2, allow_private=True)
 
         self.assertTrue(result["available"])
         self.assertEqual(result["method"], "m3u8")
@@ -87,7 +95,7 @@ class ProbeTests(unittest.TestCase):
             ),
         }
 
-        result = probe_m3u8(f"{self.base_url}/master.m3u8", timeout=2)
+        result = probe_m3u8(f"{self.base_url}/master.m3u8", timeout=2, allow_private=True)
 
         self.assertFalse(result["available"])
         self.assertIn("媒体片段", result["error"])
@@ -123,6 +131,19 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(result["video"][0]["resolution"], "1920x1080")
         self.assertEqual(result["audio"][0]["codec"], "aac")
         self.assertEqual(result["audio"][0]["sample_rate"], "48000")
+
+    def test_ffmpeg_nonzero_exit_is_not_available(self):
+        with self.assertRaises(ProbeError):
+            validate_ffmpeg_result("Stream #0:0: Video: h264, 1920x1080", 1)
+
+    def test_private_url_requires_explicit_opt_in(self):
+        with self.assertRaises(ValueError):
+            validate_url("http://127.0.0.1:8080/live.m3u8")
+
+        self.assertEqual(
+            validate_url("http://127.0.0.1:8080/live.m3u8", allow_private=True),
+            "http://127.0.0.1:8080/live.m3u8",
+        )
 
     def test_render_html_report_escapes_values(self):
         result = {

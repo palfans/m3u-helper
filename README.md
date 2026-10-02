@@ -92,6 +92,8 @@ docker-compose up -d
 
 Python 回退可以判断清单和片段是否可用；当清单缺少 `RESOLUTION` 或 `CODECS` 标签时，报告会显示未知字段。
 
+服务默认拒绝环回地址和字面内网地址。仅在确认部署环境可信时设置 `M3U_HELPER_ALLOW_PRIVATE_URLS=1`。
+
 ## HTTP 接口
 
 - `POST /parse`：读取 M3U/M3U8 URL 或上传文件，返回播放列表条目。

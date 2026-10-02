@@ -11,13 +11,15 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.urandom(24)
 app.config['UPLOAD_FOLDER'] = 'instance/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max-limit
+app.config['ALLOW_PRIVATE_URLS'] = os.environ.get('M3U_HELPER_ALLOW_PRIVATE_URLS') == '1'
+app.config['PROBE_TIMEOUT'] = int(os.environ.get('M3U_HELPER_PROBE_TIMEOUT', '10'))
 
 # 确保上传目录存在
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 def is_valid_url(url):
     try:
-        validate_url(url)
+        validate_url(url, allow_private=app.config['ALLOW_PRIVATE_URLS'])
     except ValueError:
         return False
     return True
@@ -40,7 +42,11 @@ def generate_m3u(entries):
     return '\n'.join(content)
 
 def get_video_info(url):
-    return probe_url(url)
+    return probe_url(
+        url,
+        timeout=app.config['PROBE_TIMEOUT'],
+        allow_private=app.config['ALLOW_PRIVATE_URLS'],
+    )
 
 def check_video_status(entry):
     url = entry.get('url', '')
@@ -90,17 +96,24 @@ def parse():
         file = request.files['file']
         if file.filename == '':
             return jsonify({'error': 'No file selected'})
-            
-        if file:
-            content = file.read().decode('utf-8')
+        try:
+            content = file.read().decode('utf-8-sig')
+        except UnicodeDecodeError:
+            return jsonify({'error': '上传文件编码必须为 UTF-8'}), 400
+        try:
             entries = parse_m3u(content)
-            return jsonify({'entries': entries})
+        except (UnicodeError, ValueError) as e:
+            return jsonify({'error': str(e)}), 400
+        return jsonify({'entries': entries})
             
     return jsonify({'error': 'Invalid request'})
 
 @app.route('/video-info', methods=['POST'])
 def video_info():
-    url = request.json.get('url')
+    payload = request.get_json(silent=True)
+    if payload is None:
+        return jsonify({'error': '请求体必须是 JSON'}), 400
+    url = payload.get('url')
     if not url:
         return jsonify({'error': 'No URL provided'})
         
@@ -143,7 +156,8 @@ def check_all():
 def download():
     """下载生成的M3U文件"""
     try:
-        entries = request.json.get('entries', [])
+        payload = request.get_json(silent=True) or {}
+        entries = payload.get('entries', [])
         if not entries:
             return jsonify({'error': '没有可下载的内容'})
             
