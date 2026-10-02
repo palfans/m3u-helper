@@ -1,144 +1,187 @@
-<!DOCTYPE html>
-<html lang="zh">
+<!doctype html>
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>M3U Helper</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.css" rel="stylesheet">
-    <style>
-        .playlist-item {
-            cursor: move;
-            padding: 10px;
-            margin: 5px 0;
-            background-color: #f8f9fa;
-            border-radius: 4px;
-            border: 1px solid #dee2e6;
-        }
-        .playlist-item:hover {
-            background-color: #e9ecef;
-        }
-        .video-info {
-            font-size: 0.9em;
-            color: #6c757d;
-        }
-        .check-info {
-            font-size: 0.85em;
-            margin-top: 8px;
-            padding: 8px;
-            border-radius: 4px;
-            white-space: pre-line;
-        }
-        .check-info.success {
-            background-color: #d4edda;
-            border: 1px solid #c3e6cb;
-        }
-        .check-info.error {
-            background-color: #f8d7da;
-            border: 1px solid #f5c6cb;
-        }
-        .check-info.checking {
-            background-color: #fff3cd;
-            border: 1px solid #ffeeba;
-        }
-        .loading-spinner {
-            display: inline-block;
-            width: 1rem;
-            height: 1rem;
-            border: 0.2em solid currentColor;
-            border-right-color: transparent;
-            border-radius: 50%;
-            animation: spinner-border .75s linear infinite;
-        }
-        .progress {
-            height: 20px;
-        }
-        .current-checking {
-            font-size: 0.9em;
-            color: #6c757d;
-            margin-top: 10px;
-        }
-        .check-status {
-            font-size: 0.8em;
-            padding: 2px 6px;
-            border-radius: 3px;
-            margin-left: 8px;
-        }
-        .check-status.success {
-            background-color: #28a745;
-            color: white;
-        }
-        .check-status.error {
-            background-color: #dc3545;
-            color: white;
-        }
-        .check-status.checking {
-            background-color: #ffc107;
-            color: black;
-        }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0d172a">
+    <title>M3U Helper · 播放列表检查</title>
+    <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <div class="container mt-5">
-        <h1 class="mb-4">M3U Helper</h1>
-        
-        <!-- 输入表单 -->
-        <div class="card mb-4">
-            <div class="card-body">
-                <form id="m3uForm" class="mb-3">
-                    <div class="mb-3">
-                        <label for="m3uUrl" class="form-label">M3U URL</label>
-                        <input type="url" class="form-control" id="m3uUrl" placeholder="输入M3U文件URL">
-                    </div>
-                    <div class="mb-3">
-                        <label for="m3uFile" class="form-label">或上传M3U文件</label>
-                        <input type="file" class="form-control" id="m3uFile" accept=".m3u,.m3u8">
-                    </div>
-                    <button type="submit" class="btn btn-primary">解析</button>
-                </form>
+    <div class="app-shell">
+        <header class="topbar">
+            <a class="brand" href="/" aria-label="M3U Helper 首页">
+                <span class="brand-mark" aria-hidden="true">M3</span>
+                <span class="brand-copy">
+                    <span class="brand-kicker">MEDIA TOOLKIT</span>
+                    <strong>M3U Helper</strong>
+                </span>
+            </a>
+            <div class="topbar-status" id="connectionStatus" aria-live="polite">
+                <span class="status-dot" aria-hidden="true"></span>
+                <span>准备就绪</span>
             </div>
-        </div>
+        </header>
 
-        <!-- 播放列表 -->
-        <div class="card">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h5 class="card-title mb-0">播放列表</h5>
+        <main class="page-content">
+            <section class="intro-grid" aria-labelledby="pageTitle">
+                <div>
+                    <p class="eyebrow">PLAYLIST INSPECTOR</p>
+                    <h1 id="pageTitle">整理播放列表，快速确认每一路流。</h1>
+                    <p class="intro-copy">导入 M3U 或 M3U8，查看地址、编码和音频信息，按顺序完成可用性检查。</p>
+                </div>
+                <div class="intro-note">
+                    <span class="note-icon" aria-hidden="true">↗</span>
                     <div>
-                        <button id="checkAllBtn" class="btn btn-warning me-2" style="display: none;">
-                            检查所有视频
-                        </button>
-                        <button id="reportBtn" class="btn btn-info me-2" style="display: none;">
-                            下载 HTML 报告
-                        </button>
-                        <button id="downloadBtn" class="btn btn-success" style="display: none;">
-                            下载M3U文件
-                        </button>
+                        <strong>检查策略</strong>
+                        <span>默认单线程，按列表顺序执行</span>
                     </div>
                 </div>
-                <div id="playlist" class="mt-3">
-                    <!-- 播放列表项将通过JavaScript动态添加 -->
+            </section>
+
+            <section class="source-card panel" aria-labelledby="sourceTitle">
+                <div class="panel-heading">
+                    <div>
+                        <p class="section-kicker">01 / IMPORT</p>
+                        <h2 id="sourceTitle">导入播放列表</h2>
+                    </div>
+                    <span class="source-state" id="sourceState">等待导入</span>
                 </div>
-            </div>
-        </div>
+                <form id="m3uForm">
+                    <label class="field-label" for="m3uUrl">M3U / M3U8 地址</label>
+                    <div class="url-entry">
+                        <span class="input-prefix" aria-hidden="true">URL</span>
+                        <input type="url" id="m3uUrl" autocomplete="url" placeholder="example.com/playlist.m3u8">
+                        <button type="submit" class="button button-primary" id="parseBtn">
+                            <span>解析列表</span>
+                            <span aria-hidden="true">→</span>
+                        </button>
+                    </div>
+                    <div class="import-divider"><span>或者</span></div>
+                    <label class="file-drop" for="m3uFile">
+                        <input type="file" id="m3uFile" accept=".m3u,.m3u8">
+                        <span class="file-icon" aria-hidden="true">↑</span>
+                        <span class="file-copy">
+                            <strong id="fileName">选择本地文件</strong>
+                            <small>支持 .m3u / .m3u8 · UTF-8 编码</small>
+                        </span>
+                        <span class="button button-quiet">浏览文件</span>
+                    </label>
+                </form>
+                <div class="source-footer">
+                    <span><span class="secure-icon" aria-hidden="true">⌁</span> 地址只在当前检查过程中使用</span>
+                    <span id="sourceMeta">尚未载入数据</span>
+                </div>
+            </section>
+
+            <section class="dashboard is-hidden" id="dashboard" aria-labelledby="playlistTitle">
+                <div class="dashboard-heading">
+                    <div>
+                        <p class="section-kicker">02 / REVIEW</p>
+                        <h2 id="playlistTitle">播放列表</h2>
+                        <p class="dashboard-subtitle" id="playlistSubtitle">拖动项目可以调整顺序</p>
+                    </div>
+                    <div class="action-group" aria-label="播放列表操作">
+                        <button type="button" class="button button-secondary" id="checkAllBtn">
+                            <span class="button-pulse" aria-hidden="true"></span>
+                            检查全部
+                        </button>
+                        <button type="button" class="button button-quiet is-hidden" id="reportBtn">下载 HTML 报告</button>
+                        <button type="button" class="button button-quiet" id="downloadBtn">导出 M3U</button>
+                    </div>
+                </div>
+
+                <div class="stats-grid" aria-label="检查概览">
+                    <article class="stat-card stat-total">
+                        <span class="stat-label">全部条目</span>
+                        <strong id="summaryTotal">0</strong>
+                        <span class="stat-hint">当前播放列表</span>
+                    </article>
+                    <article class="stat-card stat-available">
+                        <span class="stat-label">可用</span>
+                        <strong id="summaryAvailable">0</strong>
+                        <span class="stat-hint">已确认可播放</span>
+                    </article>
+                    <article class="stat-card stat-errors">
+                        <span class="stat-label">不可用</span>
+                        <strong id="summaryErrors">0</strong>
+                        <span class="stat-hint">需要进一步处理</span>
+                    </article>
+                    <article class="stat-card stat-pending">
+                        <span class="stat-label">待检查</span>
+                        <strong id="summaryPending">0</strong>
+                        <span class="stat-hint">等待顺序探测</span>
+                    </article>
+                </div>
+
+                <div class="progress-panel" id="progressPanel">
+                    <div class="progress-heading">
+                        <div>
+                            <span class="progress-kicker">CHECK PROGRESS</span>
+                            <strong id="progressTitle">准备检查</strong>
+                        </div>
+                        <strong id="progressLabel">0 / 0</strong>
+                    </div>
+                    <div class="progress-track" aria-hidden="true"><span id="progressBar"></span></div>
+                    <p class="progress-message" id="currentChecking">点击“检查全部”开始按顺序探测。</p>
+                </div>
+
+                <div class="playlist-toolbar">
+                    <label class="search-field" for="playlistSearch">
+                        <span aria-hidden="true">⌕</span>
+                        <input type="search" id="playlistSearch" placeholder="搜索标题或地址" autocomplete="off">
+                    </label>
+                    <label class="filter-field" for="statusFilter">
+                        <span>筛选</span>
+                        <select id="statusFilter">
+                            <option value="all">全部状态</option>
+                            <option value="pending">待检查</option>
+                            <option value="ok">可用</option>
+                            <option value="error">不可用</option>
+                        </select>
+                    </label>
+                    <span class="visible-count" id="visibleCount">显示 0 条</span>
+                </div>
+
+                <div class="playlist" id="playlist" aria-live="polite"></div>
+                <div class="empty-state is-hidden" id="emptyState">
+                    <span class="empty-icon" aria-hidden="true">⌁</span>
+                    <h3>列表里还没有项目</h3>
+                    <p>请先导入一个 M3U 或 M3U8 文件。</p>
+                </div>
+                <div class="empty-state is-hidden" id="filterEmpty">
+                    <span class="empty-icon" aria-hidden="true">⌕</span>
+                    <h3>没有匹配项目</h3>
+                    <p>尝试更换关键词或状态筛选条件。</p>
+                </div>
+            </section>
+        </main>
+
+        <footer class="page-footer">
+            <span>M3U Helper</span>
+            <span>清晰检查每一个播放地址</span>
+        </footer>
     </div>
 
-    <!-- 视频信息模态框 -->
-    <div class="modal fade" id="videoInfoModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">视频信息</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    <dialog class="info-dialog" id="videoInfoModal" aria-labelledby="videoInfoTitle">
+        <div class="dialog-card">
+            <div class="dialog-header">
+                <div>
+                    <p class="section-kicker">STREAM DETAILS</p>
+                    <h2 id="videoInfoTitle">视频信息</h2>
                 </div>
-                <div class="modal-body">
-                    <pre id="videoInfoContent"></pre>
-                </div>
+                <button type="button" class="icon-button" id="closeModalButton" aria-label="关闭详情">×</button>
             </div>
+            <div class="dialog-body" id="videoInfoContent"></div>
         </div>
-    </div>
+    </dialog>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="true"></div>
+
+    <noscript>
+        <div class="noscript-message">此页面需要启用 JavaScript 才能使用播放列表检查功能。</div>
+    </noscript>
+
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <script src="/static/js/main.js"></script>
 </body>

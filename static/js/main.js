@@ -1,295 +1,832 @@
-document.addEventListener('DOMContentLoaded', function() {
-    const form = document.getElementById('m3uForm');
-    const playlist = document.getElementById('playlist');
-    const downloadBtn = document.getElementById('downloadBtn');
-    const checkAllBtn = document.getElementById('checkAllBtn');
-    const reportBtn = document.getElementById('reportBtn');
-    const videoInfoModal = new bootstrap.Modal(document.getElementById('videoInfoModal'));
-    
-    let currentEntries = [];
-    let currentSourceUrl = '';
-    let checkingInProgress = false;
-    
-    // 初始化拖拽排序
-    const sortable = new Sortable(playlist, {
-        animation: 150,
-        ghostClass: 'bg-light',
-        onEnd: function() {
-            // 更新条目顺序
-            updateEntries();
-        }
-    });
+document.addEventListener('DOMContentLoaded', () => {
+    const get = (id) => document.getElementById(id);
+    const dom = {
+        form: get('m3uForm'),
+        urlInput: get('m3uUrl'),
+        fileInput: get('m3uFile'),
+        fileName: get('fileName'),
+        parseButton: get('parseBtn'),
+        connectionStatus: get('connectionStatus'),
+        sourceState: get('sourceState'),
+        sourceMeta: get('sourceMeta'),
+        dashboard: get('dashboard'),
+        playlist: get('playlist'),
+        playlistSubtitle: get('playlistSubtitle'),
+        playlistSearch: get('playlistSearch'),
+        statusFilter: get('statusFilter'),
+        visibleCount: get('visibleCount'),
+        emptyState: get('emptyState'),
+        filterEmpty: get('filterEmpty'),
+        progressPanel: get('progressPanel'),
+        progressTitle: get('progressTitle'),
+        progressLabel: get('progressLabel'),
+        progressBar: get('progressBar'),
+        currentChecking: get('currentChecking'),
+        summaryTotal: get('summaryTotal'),
+        summaryAvailable: get('summaryAvailable'),
+        summaryErrors: get('summaryErrors'),
+        summaryPending: get('summaryPending'),
+        checkAllButton: get('checkAllBtn'),
+        reportButton: get('reportBtn'),
+        downloadButton: get('downloadBtn'),
+        videoInfoModal: get('videoInfoModal'),
+        videoInfoTitle: get('videoInfoTitle'),
+        videoInfoContent: get('videoInfoContent'),
+        closeModalButton: get('closeModalButton'),
+        toastContainer: get('toastContainer'),
+    };
 
-    function setButtonVisibility() {
-        const hasEntries = currentEntries.length > 0;
-        downloadBtn.style.display = hasEntries ? 'block' : 'none';
-        checkAllBtn.style.display = hasEntries ? 'block' : 'none';
-        reportBtn.style.display = currentSourceUrl ? 'block' : 'none';
+    const state = {
+        entries: [],
+        results: [],
+        sourceUrl: '',
+        checking: false,
+        requestToken: 0,
+        parseController: null,
+        checkController: null,
+        infoController: null,
+        objectUrls: new Set(),
+    };
+
+    const statusLabels = {
+        pending: '待检查',
+        checking: '检查中',
+        ok: '可用',
+        error: '不可用',
+    };
+
+    const sortable = window.Sortable ? new window.Sortable(dom.playlist, {
+        animation: 180,
+        handle: '.drag-handle',
+        ghostClass: 'sortable-ghost',
+        onEnd: syncCurrentOrder,
+    }) : null;
+
+    function text(value, fallback = '未知') {
+        if (value === null || value === undefined || value === '') {
+            return fallback;
+        }
+        return String(value);
     }
 
-    function addTextLine(parent, label, value) {
-        const line = document.createElement('div');
-        line.textContent = `${label}: ${value || '未知'}`;
-        parent.appendChild(line);
+    function formatDuration(value) {
+        const seconds = Number.parseFloat(value);
+        if (!Number.isFinite(seconds) || seconds < 0) {
+            return '时长未知';
+        }
+        if (seconds >= 3600) {
+            return `${Math.floor(seconds / 3600)}小时${Math.floor((seconds % 3600) / 60)}分`;
+        }
+        if (seconds >= 60) {
+            return `${Math.floor(seconds / 60)}分${Math.round(seconds % 60)}秒`;
+        }
+        return `${Math.round(seconds)}秒`;
     }
 
-    function setCheckingState(item) {
-        let status = item.querySelector('.check-status');
-        if (!status) {
-            status = document.createElement('span');
-            item.querySelector('.info-btn').insertAdjacentElement('afterend', status);
-        }
-        status.className = 'check-status checking';
-        status.textContent = '检查中';
-
-        let info = item.querySelector('.check-info');
-        if (!info) {
-            info = document.createElement('div');
-            item.appendChild(info);
-        }
-        info.className = 'check-info checking';
-        info.textContent = '正在检查视频信息...';
+    function formatNumber(value) {
+        const number = Number(value);
+        return Number.isFinite(number) ? number.toLocaleString('zh-CN') : text(value);
     }
 
-    function showResult(item, result) {
-        const success = result.status === 'ok';
-        const details = result.details || {};
-        const status = item.querySelector('.check-status');
-        const info = item.querySelector('.check-info');
-        status.className = `check-status ${success ? 'success' : 'error'}`;
-        status.textContent = success ? '正常' : '错误';
-        info.className = `check-info ${success ? 'success' : 'error'}`;
-        info.textContent = '';
-        if (!success) {
-            info.textContent = details.error || result.error || '检查失败';
+    function setConnection(message, kind = '') {
+        const label = dom.connectionStatus.querySelector('span:last-child');
+        label.textContent = message;
+        dom.connectionStatus.className = 'topbar-status';
+        if (kind) {
+            dom.connectionStatus.classList.add(`is-${kind}`);
+        }
+    }
+
+    function setSourceState(message, kind = '') {
+        dom.sourceState.textContent = message;
+        dom.sourceState.className = 'source-state';
+        if (kind) {
+            dom.sourceState.classList.add(`is-${kind}`);
+        }
+    }
+
+    function showToast(message, kind = 'info') {
+        const toast = document.createElement('div');
+        toast.className = `toast ${kind === 'error' ? 'is-error' : kind === 'success' ? 'is-success' : ''}`;
+        toast.textContent = text(message, '操作完成');
+        dom.toastContainer.appendChild(toast);
+        window.setTimeout(() => toast.remove(), 4200);
+    }
+
+    function clearDownloadUrls() {
+        state.objectUrls.forEach((objectUrl) => window.URL.revokeObjectURL(objectUrl));
+        state.objectUrls.clear();
+    }
+
+    function clearStaleState() {
+        state.requestToken += 1;
+        state.parseController?.abort();
+        state.checkController?.abort();
+        state.infoController?.abort();
+        state.parseController = null;
+        state.checkController = null;
+        state.infoController = null;
+        state.entries = [];
+        state.results = [];
+        state.sourceUrl = '';
+        state.checking = false;
+        clearDownloadUrls();
+        dom.playlist.replaceChildren();
+        dom.dashboard.classList.add('is-hidden');
+        dom.emptyState.classList.add('is-hidden');
+        dom.filterEmpty.classList.add('is-hidden');
+        dom.playlistSearch.value = '';
+        dom.statusFilter.value = 'all';
+        dom.visibleCount.textContent = '显示 0 条';
+        dom.toastContainer.replaceChildren();
+        if (dom.videoInfoModal.open) {
+            dom.videoInfoModal.close();
+        }
+        dom.videoInfoContent.replaceChildren();
+        dom.sourceMeta.textContent = '尚未载入数据';
+        setSourceState('等待导入');
+        setConnection('准备就绪');
+        updateSummary();
+        updateProgress();
+        updateActionState();
+    }
+
+    function setParsingState(isParsing) {
+        dom.parseButton.disabled = isParsing;
+        dom.parseButton.querySelector('span:first-child').textContent = isParsing ? '读取中…' : '解析列表';
+        dom.urlInput.disabled = isParsing;
+        dom.fileInput.disabled = isParsing;
+    }
+
+    function setCheckButtonLabel(label) {
+        const pulse = document.createElement('span');
+        pulse.className = 'button-pulse';
+        pulse.setAttribute('aria-hidden', 'true');
+        const labelNode = document.createElement('span');
+        labelNode.textContent = label;
+        dom.checkAllButton.replaceChildren(pulse, labelNode);
+    }
+
+    function getStatus(index) {
+        return state.results[index]?.status || 'pending';
+    }
+
+    function updateSummary() {
+        const total = state.entries.length;
+        const available = state.results.filter((result) => result?.status === 'ok').length;
+        const errors = state.results.filter((result) => result?.status === 'error').length;
+        const pending = Math.max(0, total - available - errors);
+        dom.summaryTotal.textContent = String(total);
+        dom.summaryAvailable.textContent = String(available);
+        dom.summaryErrors.textContent = String(errors);
+        dom.summaryPending.textContent = String(pending);
+    }
+
+    function updateProgress() {
+        const total = state.entries.length;
+        const checked = state.results.filter(Boolean).length;
+        const percent = total ? Math.round((checked / total) * 100) : 0;
+        dom.progressLabel.textContent = `${checked} / ${total}`;
+        dom.progressBar.style.width = `${percent}%`;
+        dom.progressPanel.classList.toggle('is-running', state.checking);
+        if (state.checking) {
+            dom.progressTitle.textContent = '正在顺序检查';
+            dom.currentChecking.textContent = `服务端将按列表顺序检查 ${total} 条地址，请保持页面打开。`;
+        } else if (total && checked === total) {
+            dom.progressTitle.textContent = '检查完成';
+            dom.currentChecking.textContent = '所有条目已经完成探测，可以使用筛选快速定位结果。';
+        } else if (checked) {
+            dom.progressTitle.textContent = '检查未完成';
+            dom.currentChecking.textContent = `已完成 ${checked} 条，仍有 ${total - checked} 条等待检查。`;
+        } else {
+            dom.progressTitle.textContent = '准备检查';
+            dom.currentChecking.textContent = '点击“检查全部”开始按顺序探测。';
+        }
+    }
+
+    function updateActionState() {
+        const hasEntries = state.entries.length > 0;
+        dom.dashboard.classList.toggle('is-hidden', !hasEntries);
+        dom.checkAllButton.disabled = !hasEntries || state.checking;
+        dom.reportButton.classList.toggle('is-hidden', !hasEntries);
+        dom.reportButton.disabled = !state.sourceUrl || state.checking;
+        dom.reportButton.title = state.sourceUrl ? '下载当前地址的 HTML 探测报告' : '上传文件后无法生成远程地址报告';
+        dom.downloadButton.disabled = !hasEntries || state.checking;
+        if (state.checking) {
+            setCheckButtonLabel('检查中…');
+        } else {
+            setCheckButtonLabel('检查全部');
+        }
+    }
+
+    function addChip(container, value) {
+        if (!value || value === '未知') {
             return;
         }
-        addTextLine(info, '探测方式', details.method);
-        addTextLine(info, '格式', details.format);
-        (details.video || []).forEach((stream, index) => {
-            addTextLine(info, `视频${index + 1}`, `${stream.codec || '未知'}，${stream.resolution || '未知分辨率'}`);
+        const chip = document.createElement('span');
+        chip.className = 'chip';
+        chip.textContent = value;
+        container.appendChild(chip);
+    }
+
+    function addResultValue(container, label, value) {
+        const item = document.createElement('div');
+        item.className = 'result-value';
+        const labelNode = document.createElement('span');
+        labelNode.textContent = label;
+        const valueNode = document.createElement('strong');
+        valueNode.textContent = text(value);
+        item.append(labelNode, valueNode);
+        container.appendChild(item);
+    }
+
+    function appendStreamRows(container, label, streams, type) {
+        if (!streams?.length) {
+            return;
+        }
+        const list = document.createElement('div');
+        list.className = 'stream-list';
+        streams.forEach((stream, index) => {
+            const row = document.createElement('div');
+            row.className = 'stream-row';
+            const rowLabel = document.createElement('span');
+            rowLabel.className = 'stream-label';
+            rowLabel.textContent = `${label}${index + 1}`;
+            const value = document.createElement('span');
+            value.className = 'stream-value';
+            if (type === 'video') {
+                value.textContent = [
+                    text(stream.codec),
+                    text(stream.resolution, '未知分辨率'),
+                    stream.frame_rate ? `${stream.frame_rate} fps` : '',
+                ].filter(Boolean).join(' · ');
+            } else {
+                value.textContent = [
+                    text(stream.codec),
+                    stream.sample_rate ? `${stream.sample_rate} Hz` : '',
+                    stream.channels ? `${stream.channels} 声道` : '',
+                    stream.channel_layout || stream.language || '',
+                ].filter(Boolean).join(' · ');
+            }
+            row.append(rowLabel, value);
+            list.appendChild(row);
         });
-        (details.audio || []).forEach((stream, index) => {
-            addTextLine(info, `音频${index + 1}`, `${stream.codec || '未知'}，${stream.sample_rate || '未知采样率'}，${stream.channels || '未知声道'}`);
+        container.appendChild(list);
+    }
+
+    function renderCardResult(card, result, status) {
+        card.dataset.status = status;
+        const badge = card.querySelector('.status-badge');
+        badge.className = `status-badge status-${status}`;
+        badge.textContent = statusLabels[status] || status;
+        const resultPanel = card.querySelector('.result-panel');
+        resultPanel.replaceChildren();
+        resultPanel.className = 'result-panel';
+        if (status === 'checking') {
+            resultPanel.classList.add('result-checking');
+            const message = document.createElement('p');
+            message.className = 'result-hint';
+            message.textContent = '正在等待服务端返回探测结果…';
+            resultPanel.appendChild(message);
+            return;
+        }
+        if (!result) {
+            const message = document.createElement('p');
+            message.className = 'result-hint';
+            message.textContent = '等待检查。你可以先调整列表顺序。';
+            resultPanel.appendChild(message);
+            return;
+        }
+        const details = result.details || result;
+        if (status === 'error') {
+            resultPanel.classList.add('result-error');
+            const message = document.createElement('p');
+            message.className = 'error-copy';
+            const errorText = text(details.error || result.error, '检查失败');
+            message.textContent = errorText.length > 280 ? `${errorText.slice(0, 280)}…` : errorText;
+            message.title = errorText;
+            resultPanel.appendChild(message);
+            return;
+        }
+        resultPanel.classList.add('result-ok');
+        const summary = document.createElement('div');
+        summary.className = 'result-grid';
+        addResultValue(summary, '探测方式', details.method);
+        addResultValue(summary, '格式', details.format);
+        addResultValue(summary, '时长', details.duration);
+        addResultValue(summary, '码率', details.bit_rate);
+        resultPanel.appendChild(summary);
+        appendStreamRows(resultPanel, '视频', details.video, 'video');
+        appendStreamRows(resultPanel, '音频', details.audio, 'audio');
+    }
+
+    function makeButton(label, className, title) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = className;
+        button.textContent = label;
+        if (title) {
+            button.title = title;
+        }
+        return button;
+    }
+
+    function createPlaylistCard(entry, index) {
+        const card = document.createElement('article');
+        card.className = 'playlist-item';
+        card.dataset.index = String(index);
+
+        const handle = document.createElement('span');
+        handle.className = 'drag-handle';
+        handle.textContent = '⋮⋮';
+        handle.title = '拖动调整顺序';
+        handle.setAttribute('aria-label', '拖动调整顺序');
+
+        const main = document.createElement('div');
+        main.className = 'item-main';
+        const header = document.createElement('div');
+        header.className = 'item-head';
+
+        const titleGroup = document.createElement('div');
+        titleGroup.className = 'item-title-group';
+        const number = document.createElement('span');
+        number.className = 'item-number';
+        number.textContent = String(index + 1).padStart(2, '0');
+        const titleBlock = document.createElement('div');
+        const title = document.createElement('h3');
+        title.textContent = text(entry.title, '未命名');
+        const urlRow = document.createElement('div');
+        urlRow.className = 'item-url-row';
+        const url = document.createElement('span');
+        url.className = 'item-url';
+        url.textContent = text(entry.url, '地址未知');
+        const copyButton = makeButton('复制', 'small-button copy-button', '复制播放地址');
+        copyButton.addEventListener('click', () => copyUrl(entry.url));
+        urlRow.append(url, copyButton);
+        titleBlock.append(title, urlRow);
+        titleGroup.append(number, titleBlock);
+
+        const actions = document.createElement('div');
+        actions.className = 'item-actions';
+        const badge = document.createElement('span');
+        badge.className = 'status-badge status-pending';
+        badge.textContent = statusLabels.pending;
+        badge.setAttribute('aria-live', 'polite');
+        const infoButton = makeButton('详情', 'small-button', '查看视频和音频信息');
+        infoButton.addEventListener('click', () => openDetails(index));
+        const deleteButton = makeButton('删除', 'small-button danger', '从当前列表移除');
+        deleteButton.addEventListener('click', () => removeEntry(index));
+        actions.append(badge, infoButton, deleteButton);
+        header.append(titleGroup, actions);
+
+        const chips = document.createElement('div');
+        chips.className = 'item-chips';
+        addChip(chips, entry.resolution);
+        addChip(chips, entry.codecs);
+        addChip(chips, entry.bandwidth ? `${formatNumber(entry.bandwidth)} bps` : '');
+        addChip(chips, formatDuration(entry.duration));
+
+        const resultPanel = document.createElement('div');
+        resultPanel.className = 'result-panel';
+        main.append(header, chips, resultPanel);
+        card.append(handle, main);
+        renderCardResult(card, null, 'pending');
+        return card;
+    }
+
+    function renderPlaylist() {
+        dom.playlist.replaceChildren();
+        state.entries.forEach((entry, index) => {
+            const card = createPlaylistCard(entry, index);
+            renderCardResult(card, state.results[index], getStatus(index));
+            dom.playlist.appendChild(card);
         });
+        dom.emptyState.classList.toggle('is-hidden', state.entries.length > 0);
+        updateCards();
+        applyFilters();
+    }
+
+    function updateCards() {
+        Array.from(dom.playlist.children).forEach((card, index) => {
+            renderCardResult(card, state.results[index], getStatus(index));
+            const disabled = state.checking;
+            card.querySelectorAll('.small-button').forEach((button) => {
+                button.disabled = disabled;
+            });
+        });
+        updateSummary();
+        updateProgress();
+        updateActionState();
+    }
+
+    function applyFilters() {
+        const query = dom.playlistSearch.value.trim().toLowerCase();
+        const statusFilter = dom.statusFilter.value;
+        let visible = 0;
+        Array.from(dom.playlist.children).forEach((card, index) => {
+            const entry = state.entries[index];
+            const status = getStatus(index);
+            const searchable = `${text(entry?.title, '')} ${text(entry?.url, '')}`.toLowerCase();
+            const matched = (!query || searchable.includes(query)) && (statusFilter === 'all' || status === statusFilter);
+            card.classList.toggle('is-filtered', !matched);
+            if (matched) {
+                visible += 1;
+            }
+        });
+        dom.visibleCount.textContent = `显示 ${visible} / ${state.entries.length} 条`;
+        dom.filterEmpty.classList.toggle('is-hidden', state.entries.length === 0 || visible > 0);
+    }
+
+    function syncCurrentOrder() {
+        const order = Array.from(dom.playlist.children).map((card) => Number(card.dataset.index));
+        if (order.some((index) => !Number.isInteger(index))) {
+            return;
+        }
+        state.entries = order.map((index) => state.entries[index]);
+        state.results = order.map((index) => state.results[index]);
+        renderPlaylist();
+        showToast('已更新播放顺序');
+    }
+
+    function removeEntry(index) {
+        if (state.checking) {
+            showToast('检查进行中，完成后再修改列表', 'info');
+            return;
+        }
+        state.entries.splice(index, 1);
+        state.results.splice(index, 1);
+        renderPlaylist();
+        updateActionState();
+        showToast('已从当前列表移除');
+    }
+
+    async function copyUrl(url) {
+        let fallbackInput = null;
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(url);
+            } else {
+                fallbackInput = document.createElement('textarea');
+                fallbackInput.value = url;
+                fallbackInput.style.position = 'fixed';
+                fallbackInput.style.opacity = '0';
+                document.body.appendChild(fallbackInput);
+                fallbackInput.select();
+                if (!document.execCommand('copy')) {
+                    throw new Error('当前浏览器不支持复制');
+                }
+            }
+            showToast('播放地址已复制', 'success');
+        } catch (error) {
+            showToast(error.message || '复制失败', 'error');
+        } finally {
+            fallbackInput?.remove();
+        }
+    }
+
+    function addDetailValue(container, label, value) {
+        const item = document.createElement('div');
+        item.className = 'detail-value';
+        const labelNode = document.createElement('span');
+        labelNode.textContent = label;
+        const valueNode = document.createElement('strong');
+        valueNode.textContent = text(value);
+        item.append(labelNode, valueNode);
+        container.appendChild(item);
+    }
+
+    function renderModalDetails(data, url) {
+        const payload = data?.details || data || {};
+        const available = data?.available ?? data?.status === 'ok';
+        dom.videoInfoContent.replaceChildren();
+        const address = document.createElement('p');
+        address.className = 'dialog-url';
+        address.textContent = text(url || payload.url, '地址未知');
+        dom.videoInfoContent.appendChild(address);
+
+        const summary = document.createElement('div');
+        summary.className = 'detail-grid';
+        addDetailValue(summary, '状态', available ? '可用' : '不可用');
+        addDetailValue(summary, '探测方式', payload.method);
+        addDetailValue(summary, '格式', payload.format);
+        addDetailValue(summary, '时长', payload.duration);
+        dom.videoInfoContent.appendChild(summary);
+
+        if (payload.error) {
+            const error = document.createElement('p');
+            error.className = 'error-copy dialog-section';
+            error.textContent = payload.error;
+            dom.videoInfoContent.appendChild(error);
+        }
+
+        appendModalStreams('视频流', payload.video, 'video');
+        appendModalStreams('音频流', payload.audio, 'audio');
+        const playlistInfo = payload.playlist || {};
+        if (Object.keys(playlistInfo).length) {
+            const section = document.createElement('section');
+            section.className = 'dialog-section';
+            const heading = document.createElement('h3');
+            heading.textContent = '播放列表信息';
+            const grid = document.createElement('div');
+            grid.className = 'detail-grid';
+            Object.entries(playlistInfo).slice(0, 8).forEach(([key, value]) => addDetailValue(grid, key, value));
+            section.append(heading, grid);
+            dom.videoInfoContent.appendChild(section);
+        }
+
+        const rawDetails = document.createElement('details');
+        rawDetails.className = 'raw-details';
+        const rawSummary = document.createElement('summary');
+        rawSummary.textContent = '查看原始 JSON';
+        const raw = document.createElement('pre');
+        raw.textContent = JSON.stringify(data, null, 2);
+        rawDetails.append(rawSummary, raw);
+        dom.videoInfoContent.appendChild(rawDetails);
+    }
+
+    function appendModalStreams(title, streams, type) {
+        if (!streams?.length) {
+            return;
+        }
+        const section = document.createElement('section');
+        section.className = 'dialog-section';
+        const heading = document.createElement('h3');
+        heading.textContent = title;
+        const list = document.createElement('div');
+        list.className = 'stream-list';
+        streams.forEach((stream, index) => {
+            const row = document.createElement('div');
+            row.className = 'stream-row';
+            const label = document.createElement('span');
+            label.className = 'stream-label';
+            label.textContent = `#${index + 1}`;
+            const value = document.createElement('span');
+            value.className = 'stream-value';
+            if (type === 'video') {
+                value.textContent = [text(stream.codec), text(stream.resolution, '未知分辨率'), stream.frame_rate || ''].filter(Boolean).join(' · ');
+            } else {
+                value.textContent = [text(stream.codec), stream.sample_rate ? `${stream.sample_rate} Hz` : '', stream.channels ? `${stream.channels} 声道` : '', stream.channel_layout || stream.language || ''].filter(Boolean).join(' · ');
+            }
+            row.append(label, value);
+            list.appendChild(row);
+        });
+        section.append(heading, list);
+        dom.videoInfoContent.appendChild(section);
+    }
+
+    async function openDetails(index) {
+        const entry = state.entries[index];
+        if (!entry) {
+            return;
+        }
+        const existing = state.results[index];
+        dom.videoInfoTitle.textContent = text(entry.title, '视频信息');
+        dom.videoInfoContent.replaceChildren();
+        const loading = document.createElement('p');
+        loading.className = 'result-hint';
+        loading.textContent = existing ? '正在整理已有探测结果…' : '正在读取视频和音频信息…';
+        dom.videoInfoContent.appendChild(loading);
+        if (!dom.videoInfoModal.open) {
+            dom.videoInfoModal.showModal();
+        }
+        if (existing) {
+            renderModalDetails(existing, entry.url);
+            return;
+        }
+        state.infoController?.abort();
+        const controller = new AbortController();
+        state.infoController = controller;
+        const token = state.requestToken;
+        try {
+            const response = await fetch('/video-info', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: entry.url }),
+                signal: controller.signal,
+            });
+            const data = await readJsonResponse(response);
+            if (token === state.requestToken) {
+                renderModalDetails(data, entry.url);
+            }
+        } catch (error) {
+            if (error.name !== 'AbortError' && token === state.requestToken) {
+                renderModalDetails({ available: false, error: error.message || '获取信息失败' }, entry.url);
+            }
+        } finally {
+            if (state.infoController === controller) {
+                state.infoController = null;
+            }
+        }
     }
 
     async function readJsonResponse(response) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         if (!response.ok || data.error) {
-            throw new Error(data.error || '请求失败');
+            throw new Error(data.error || `请求失败（${response.status}）`);
         }
         return data;
     }
 
-    // 处理表单提交
-    form.addEventListener('submit', async function(e) {
-        e.preventDefault();
-        
-        const formData = new FormData();
-        const urlInput = document.getElementById('m3uUrl');
-        const fileInput = document.getElementById('m3uFile');
-        currentSourceUrl = urlInput.value.trim();
-        if (currentSourceUrl) {
-            formData.append('url', currentSourceUrl);
-        } else if (fileInput.files.length > 0) {
-            currentSourceUrl = '';
-            formData.append('file', fileInput.files[0]);
-        } else {
-            alert('请输入 URL 或选择文件');
-            return;
-        }
-        
-        try {
-            const response = await fetch('/parse', {
-                method: 'POST',
-                body: formData
-            });
-            
-            const data = await readJsonResponse(response);
-            currentEntries = data.entries;
-            renderPlaylist(currentEntries);
-            setButtonVisibility();
-        } catch (error) {
-            alert(error.message || '解析失败');
-        }
-    });
+    function createDownload(blob, filename) {
+        const objectUrl = window.URL.createObjectURL(blob);
+        state.objectUrls.add(objectUrl);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => {
+            window.URL.revokeObjectURL(objectUrl);
+            state.objectUrls.delete(objectUrl);
+        }, 1200);
+    }
 
-    reportBtn.addEventListener('click', async function() {
-        if (!currentSourceUrl) {
-            alert('HTML 报告需要使用 M3U8 URL');
+    async function downloadReport() {
+        if (!state.sourceUrl || state.checking) {
             return;
         }
-        reportBtn.disabled = true;
+        dom.reportButton.disabled = true;
         try {
             const response = await fetch('/report', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: currentSourceUrl })
+                body: JSON.stringify({ url: state.sourceUrl }),
             });
             if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || '报告生成失败');
+                await readJsonResponse(response);
             }
-            const blobUrl = window.URL.createObjectURL(await response.blob());
-            const link = document.createElement('a');
-            link.href = blobUrl;
-            link.download = 'm3u8-report.html';
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            window.URL.revokeObjectURL(blobUrl);
+            createDownload(await response.blob(), 'm3u8-report.html');
+            showToast('HTML 报告已下载', 'success');
         } catch (error) {
-            alert(error.message || '报告生成失败');
+            showToast(error.message || '报告生成失败', 'error');
         } finally {
-            reportBtn.disabled = false;
+            updateActionState();
         }
-    });
+    }
 
-    // 处理下载按钮点击
-    downloadBtn.addEventListener('click', async function() {
-        if (!currentEntries.length) {
-            alert('没有可下载的内容');
+    async function downloadPlaylist() {
+        if (!state.entries.length || state.checking) {
             return;
         }
-        
+        dom.downloadButton.disabled = true;
         try {
             const response = await fetch('/download', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ entries: currentEntries })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entries: state.entries }),
             });
-            
-            if (response.ok) {
-                // 创建一个临时链接来下载文件
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'playlist.m3u';
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                a.remove();
-            } else {
-                const error = await response.json();
-                alert(error.error || '下载失败');
+            if (!response.ok) {
+                await readJsonResponse(response);
             }
+            createDownload(await response.blob(), 'playlist.m3u');
+            showToast('M3U 文件已导出', 'success');
         } catch (error) {
-            console.error('Error:', error);
-            alert('下载失败');
+            showToast(error.message || '导出失败', 'error');
+        } finally {
+            updateActionState();
         }
-    });
+    }
 
-    // 处理批量检查按钮点击
-    checkAllBtn.addEventListener('click', async function() {
-        if (!currentEntries.length || checkingInProgress) {
+    async function checkAll() {
+        if (!state.entries.length || state.checking) {
             return;
         }
-        checkingInProgress = true;
-        checkAllBtn.disabled = true;
-        checkAllBtn.textContent = '检查中...';
-        const items = Array.from(playlist.children);
-        items.forEach(setCheckingState);
+        state.checking = true;
+        state.results = state.entries.map(() => null);
+        updateCards();
+        setConnection('正在按顺序检查', 'busy');
+        setSourceState('检查进行中', 'busy');
+        const controller = new AbortController();
+        state.checkController = controller;
+        const token = state.requestToken;
         try {
-            const data = await readJsonResponse(await fetch('/check-all', {
+            const response = await fetch('/check-all', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entries: currentEntries })
-            }));
-            data.results.forEach((result, index) => showResult(items[index], result));
-        } catch (error) {
-            items.forEach(item => {
-                const status = item.querySelector('.check-status');
-                const info = item.querySelector('.check-info');
-                status.className = 'check-status error';
-                status.textContent = '错误';
-                info.className = 'check-info error';
-                info.textContent = error.message || '检查失败';
+                body: JSON.stringify({ entries: state.entries }),
+                signal: controller.signal,
             });
+            const data = await readJsonResponse(response);
+            if (token !== state.requestToken) {
+                return;
+            }
+            state.results = data.results || [];
+            updateCards();
+            const available = state.results.filter((result) => result?.status === 'ok').length;
+            showToast(`检查完成：${available} / ${state.entries.length} 条可用`, available ? 'success' : 'error');
+        } catch (error) {
+            if (error.name !== 'AbortError' && token === state.requestToken) {
+                state.results = state.entries.map(() => ({
+                    status: 'error',
+                    details: { error: error.message || '批量检查失败' },
+                }));
+                updateCards();
+                showToast(error.message || '批量检查失败', 'error');
+            }
         } finally {
-            checkingInProgress = false;
-            checkAllBtn.disabled = false;
-            checkAllBtn.textContent = '检查所有视频';
+            if (state.checkController === controller) {
+                state.checkController = null;
+            }
+            if (token === state.requestToken) {
+                state.checking = false;
+                updateCards();
+                setConnection('准备就绪');
+                setSourceState('已载入', 'loaded');
+            }
+        }
+    }
+
+    dom.form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const url = dom.urlInput.value.trim();
+        const file = dom.fileInput.files[0];
+        if (!url && !file) {
+            showToast('请输入 M3U 地址或选择本地文件', 'error');
+            return;
+        }
+        clearStaleState();
+        const token = state.requestToken;
+        const controller = new AbortController();
+        state.parseController = controller;
+        state.sourceUrl = url;
+        setParsingState(true);
+        setConnection('正在读取播放列表', 'busy');
+        setSourceState('正在读取', 'busy');
+        dom.sourceMeta.textContent = url ? '正在下载远程清单…' : `正在读取 ${file.name}`;
+        const formData = new FormData();
+        if (url) {
+            formData.append('url', url);
+        } else {
+            formData.append('file', file);
+        }
+        try {
+            const response = await fetch('/parse', { method: 'POST', body: formData, signal: controller.signal });
+            const data = await readJsonResponse(response);
+            if (token !== state.requestToken) {
+                return;
+            }
+            if (!Array.isArray(data.entries) || !data.entries.length) {
+                throw new Error('播放列表没有可展示的条目');
+            }
+            state.entries = data.entries;
+            state.results = data.entries.map(() => null);
+            dom.dashboard.classList.remove('is-hidden');
+            dom.playlistSubtitle.textContent = `${data.entries.length} 条地址 · ${sortable ? '拖动项目可以调整顺序' : '当前环境未加载排序组件'}`;
+            dom.sourceMeta.textContent = url ? `已载入远程清单 · ${data.entries.length} 条` : `${file.name} · ${data.entries.length} 条`;
+            dom.fileName.textContent = file ? file.name : '选择本地文件';
+            setSourceState('已载入', 'loaded');
+            setConnection('准备就绪');
+            renderPlaylist();
+            showToast(`已载入 ${data.entries.length} 条播放地址`, 'success');
+        } catch (error) {
+            if (error.name !== 'AbortError' && token === state.requestToken) {
+                setSourceState('读取失败', 'error');
+                setConnection('读取失败', 'error');
+                dom.sourceMeta.textContent = error.message || '播放列表读取失败';
+                showToast(error.message || '播放列表读取失败', 'error');
+            }
+        } finally {
+            if (state.parseController === controller) {
+                state.parseController = null;
+            }
+            setParsingState(false);
+            updateActionState();
         }
     });
 
-    // 更新条目顺序
-    function updateEntries() {
-        currentEntries = Array.from(playlist.children).map(item => ({
-            title: item.querySelector('strong').textContent,
-            duration: item.dataset.duration || '-1',
-            url: item.dataset.url
-        }));
-        setButtonVisibility();
-    }
+    dom.fileInput.addEventListener('change', () => {
+        const file = dom.fileInput.files[0];
+        if (!file) {
+            dom.fileName.textContent = '选择本地文件';
+            return;
+        }
+        dom.urlInput.value = '';
+        dom.fileName.textContent = file.name;
+    });
 
-    // 渲染播放列表
-    function renderPlaylist(entries) {
-        playlist.textContent = '';
-        entries.forEach(entry => {
-            const item = document.createElement('div');
-            item.className = 'playlist-item';
-            item.dataset.duration = entry.duration || '-1';
-            item.dataset.url = entry.url;
+    dom.urlInput.addEventListener('input', () => {
+        if (dom.urlInput.value.trim()) {
+            dom.fileInput.value = '';
+            dom.fileName.textContent = '选择本地文件';
+        }
+    });
 
-            const header = document.createElement('div');
-            header.className = 'd-flex justify-content-between align-items-center';
-            const text = document.createElement('div');
-            const title = document.createElement('strong');
-            title.textContent = entry.title || '未命名';
-            const metadata = document.createElement('div');
-            metadata.className = 'video-info';
-            metadata.textContent = `时长: ${entry.duration || '-1'}秒`;
-            const urlText = document.createElement('div');
-            urlText.textContent = `URL: ${entry.url}`;
-            metadata.appendChild(document.createElement('br'));
-            metadata.appendChild(urlText);
-            text.appendChild(title);
-            text.appendChild(metadata);
+    dom.playlistSearch.addEventListener('input', applyFilters);
+    dom.statusFilter.addEventListener('change', applyFilters);
+    dom.checkAllButton.addEventListener('click', checkAll);
+    dom.reportButton.addEventListener('click', downloadReport);
+    dom.downloadButton.addEventListener('click', downloadPlaylist);
+    dom.closeModalButton.addEventListener('click', () => dom.videoInfoModal.close());
+    dom.videoInfoModal.addEventListener('click', (event) => {
+        if (event.target === dom.videoInfoModal) {
+            dom.videoInfoModal.close();
+        }
+    });
+    dom.videoInfoModal.addEventListener('close', () => {
+        state.infoController?.abort();
+        dom.videoInfoContent.replaceChildren();
+    });
 
-            const actions = document.createElement('div');
-            const infoButton = document.createElement('button');
-            infoButton.className = 'btn btn-sm btn-info me-2 info-btn';
-            infoButton.textContent = '信息';
-            infoButton.dataset.url = entry.url;
-            const deleteButton = document.createElement('button');
-            deleteButton.className = 'btn btn-sm btn-danger delete-btn';
-            deleteButton.textContent = '删除';
-            actions.appendChild(infoButton);
-            actions.appendChild(deleteButton);
-            header.appendChild(text);
-            header.appendChild(actions);
-            item.appendChild(header);
-
-            // 绑定删除按钮事件
-            deleteButton.addEventListener('click', function() {
-                item.remove();
-                updateEntries();
-            });
-
-            // 绑定信息按钮事件
-            infoButton.addEventListener('click', async function() {
-                try {
-                    const response = await fetch('/video-info', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ url: entry.url })
-                    });
-                    const data = await readJsonResponse(response);
-                    document.getElementById('videoInfoContent').textContent = 
-                        JSON.stringify(data, null, 2);
-                    videoInfoModal.show();
-                } catch (error) {
-                    alert(error.message || '获取视频信息失败');
-                }
-            });
-
-            playlist.appendChild(item);
-        });
-    }
+    clearStaleState();
 });
